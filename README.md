@@ -54,11 +54,6 @@ This script will the following analyses:
 
 Classification results for A09T:
 
-| Task | Accuracy | Chance Level |
-|------|----------|--------------|
-| Left vs Right Hand | ~70-80% | 50% |
-| 4-Class | ~50-60% | 25% |
-
 *Note: Actual results may vary slightly depending on preprocessing parameters.*
 
 ## How to Download Other Subjects
