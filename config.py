@@ -4,6 +4,9 @@ Configuration parameters for motor imagery BCI analysis
 import numpy as np
 import os
 
+# ICA components:
+ICA_N_COMPONENTS = 20
+
 # File paths
 DATA_PATH = 'data'
 OUTPUT_PATH = 'analysis_results'
@@ -14,13 +17,13 @@ SUBJECTS_TRAIN = ['A01T', 'A02T', 'A03T', 'A04T', 'A05T', 'A06T', 'A07T', 'A08T'
 SUBJECTS_TEST = ['A01E', 'A02E', 'A03E', 'A04E', 'A05E', 'A06E', 'A07E', 'A08E', 'A09E']
 
 # Preprocessing parameters
-FILTER_LOW = 7      # Hz - high-pass filter
-FILTER_HIGH = 35    # Hz - low-pass filter
-NOTCH_FREQ = 60     # Hz - power line noise (50 in Europe)
+FILTER_LOW = 8      # Hz - high-pass filter
+FILTER_HIGH = 30    # Hz - low-pass filter
+NOTCH_FREQ = 50     # Hz - power line noise (50 in Europe)
 
 # Epoch parameters
 TMIN = 0            # seconds - start time relative to cue
-TMAX = 4            # seconds - end time relative to cue
+TMAX = 4.5          # seconds - end time relative to cue
 CLASS_DESCRIPTIONS = ['769', '770', '771', '772']
 CLASS_NAMES = {
     '769': 'Left Hand',
