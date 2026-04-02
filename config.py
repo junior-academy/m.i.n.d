@@ -8,7 +8,7 @@ import os
 ICA_N_COMPONENTS = 20
 
 # File paths
-DATA_PATH = 'data'
+DATA_PATH = 'data/BCICIV_2a_gdf'
 OUTPUT_PATH = 'analysis_results'
 PLOTS_PATH = os.path.join(OUTPUT_PATH, 'plots')
 
