@@ -1,13 +1,9 @@
 from __future__ import annotations
-
 from pathlib import Path
-from typing import Dict, Tuple
-
+from typing import Dict, List, Tuple
 import pandas as pd
 
-
 BASE_DIR = Path(__file__).resolve().parent
-
 
 def load_baseline_summary(path: Path) -> Tuple[pd.DataFrame, Dict[str, float], float]:
     baseline_df = pd.read_csv(path)
@@ -151,7 +147,6 @@ def load_ensemble_grids() -> pd.DataFrame:
 
     return ens_df
 
-
 def configure_matplotlib_style() -> None:
     import matplotlib.pyplot as plt
 
@@ -169,6 +164,93 @@ def configure_matplotlib_style() -> None:
             "ytick.labelsize": 10,
         }
     )
+
+def _save_fig(fig, out_path: Path) -> None:
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+
+def _heatmap(ax, data, x_labels, y_labels, title: str, cmap: str = "viridis", vmin=None, vmax=None):
+    import numpy as np
+
+    arr = data.to_numpy(dtype=float)
+    im = ax.imshow(arr, aspect="auto", interpolation="nearest", cmap=cmap, vmin=vmin, vmax=vmax)
+    ax.set_xticks(range(len(x_labels)))
+    ax.set_xticklabels([str(x) for x in x_labels], rotation=45, ha="right")
+    ax.set_yticks(range(len(y_labels)))
+    ax.set_yticklabels([str(y) for y in y_labels])
+    ax.set_title(title)
+    # annotate
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            val = arr[i, j]
+            if np.isnan(val):
+                continue
+            ax.text(j, i, f"{val:.3f}", ha="center", va="center", fontsize=7, color="white" if val > (vmin or 0) + 0.5 * ((vmax or val) - (vmin or 0)) else "black")
+    return im
+
+
+def load_stats_tests(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    required = {
+        "ensemble_name",
+        "threshold",
+        "paired_t_pvalue",
+        "levene_pvalue",
+        "mean_diff_conf_minus_best",
+        "mean_coverage",
+        "n_subjects_used",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Stats tests CSV at {path} missing columns: {sorted(missing)}")
+
+    df = df.copy()
+    df["threshold"] = pd.to_numeric(df["threshold"], errors="raise")
+    for c in ["paired_t_pvalue", "levene_pvalue", "mean_diff_conf_minus_best", "mean_coverage", "n_subjects_used"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["ensemble_name"] = df["ensemble_name"].astype(str)
+    return df
+
+
+def load_key_numbers() -> Tuple[pd.DataFrame, pd.DataFrame, float]:
+    key_dir = BASE_DIR / "outputs" / "key_numbers"
+    per_subject_path = key_dir / "key_numbers_per_subject.csv"
+    summary_path = key_dir / "key_numbers_summary.csv"
+    if not per_subject_path.exists():
+        raise FileNotFoundError(f"Missing key numbers per-subject CSV: {per_subject_path}")
+    if not summary_path.exists():
+        raise FileNotFoundError(f"Missing key numbers summary CSV: {summary_path}")
+
+    per_subject = pd.read_csv(per_subject_path)
+    summary = pd.read_csv(summary_path)
+    if not {"Metric", "Value"}.issubset(summary.columns):
+        raise ValueError(f"{summary_path} must include columns Metric,Value; got {list(summary.columns)}")
+
+    op = summary[summary["Metric"].astype(str).str.contains("Operating threshold", case=False, na=False)]
+    if op.empty:
+        raise ValueError(f"Could not find 'Operating threshold' row in {summary_path}")
+    operating_threshold = float(pd.to_numeric(op.iloc[0]["Value"], errors="raise"))
+    return per_subject, summary, operating_threshold
+
+
+def _extract_key_number_cols(per_subject_df: pd.DataFrame, operating_threshold: float) -> Tuple[List[str], List[str]]:
+    suffix = f"@ {operating_threshold}"
+    conf_cols = [c for c in per_subject_df.columns if c.endswith(f"Conf Acc {suffix}")]
+    cov_cols = [c for c in per_subject_df.columns if c.endswith(f"Coverage {suffix}")]
+    return conf_cols, cov_cols
+
+
+def load_baseline_per_subject() -> pd.DataFrame:
+    path = BASE_DIR / "outputs" / "classification_results.csv"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing baseline per-subject results: {path}")
+    df = pd.read_csv(path)
+    if not {"subject", "best_acc"}.issubset(df.columns):
+        raise ValueError(f"{path} missing columns subject,best_acc; got {list(df.columns)}")
+    df = df.copy()
+    df["subject"] = pd.to_numeric(df["subject"], errors="raise").astype(int)
+    df["best_acc"] = pd.to_numeric(df["best_acc"], errors="raise")
+    return df[["subject", "best_acc"]].sort_values("subject")
 
 
 def main() -> None:
@@ -198,44 +280,7 @@ def main() -> None:
 
     configure_matplotlib_style()
 
-    # (a) Mean accuracy on all trials vs threshold
-    fig, ax = plt.subplots()
-    for ensemble_name in grouped["ensemble_name"].unique():
-        sub = grouped[grouped["ensemble_name"] == ensemble_name].sort_values("threshold")
-        ax.plot(sub["threshold"], sub["mean_acc_all"], marker="o", linewidth=2, label=ensemble_name)
-
-    # Baseline horizontal lines
-    def _baseline_label(model_name: str, mean_acc: float) -> str:
-        return f"{model_name} baseline ({mean_acc:.3f})"
-
-    for model in ["LDA", "SVM", "RF"]:
-        if model in baseline_means:
-            ax.axhline(
-                baseline_means[model],
-                linestyle="--",
-                linewidth=1.2,
-                alpha=0.8,
-                label=_baseline_label(model, float(baseline_means[model])),
-            )
-
-    ax.axhline(
-        best_single_mean,
-        linestyle="--",
-        linewidth=1.2,
-        alpha=0.9,
-        color="black",
-        label=_baseline_label("Best-Single", best_single_mean),
-    )
-
-    ax.set_title("Ensemble Accuracy (All Trials) vs Threshold")
-    ax.set_xlabel("Confidence threshold")
-    ax.set_ylabel("Mean accuracy (all trials)")
-    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
-    fig.tight_layout()
-    fig.savefig(visuals_dir / "ensemble_accuracy_all_vs_threshold.png", dpi=200, bbox_inches="tight")
-    plt.close(fig)
-
-    # (b) Mean accuracy on confident trials vs threshold
+    # (1) Ensemble Accuracy (Confident Trials) vs Threshold
     fig, ax = plt.subplots()
     for ensemble_name in grouped["ensemble_name"].unique():
         sub = grouped[grouped["ensemble_name"] == ensemble_name].sort_values("threshold")
@@ -247,18 +292,17 @@ def main() -> None:
         linewidth=1.2,
         alpha=0.9,
         color="black",
-        label=_baseline_label("Best-Single", best_single_mean),
+        label=f"Best-Single baseline ({best_single_mean:.3f})",
     )
 
     ax.set_title("Ensemble Accuracy (Confident Trials) vs Threshold")
     ax.set_xlabel("Confidence threshold")
     ax.set_ylabel("Mean accuracy (confident trials)")
     ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
-    fig.tight_layout()
-    fig.savefig(visuals_dir / "ensemble_accuracy_confident_vs_threshold.png", dpi=200, bbox_inches="tight")
+    _save_fig(fig, visuals_dir / "ensemble_accuracy_confident_vs_threshold.png")
     plt.close(fig)
 
-    # (c) Mean coverage vs threshold
+    # (2) Ensemble Coverage vs Threshold
     fig, ax = plt.subplots()
     for ensemble_name in grouped["ensemble_name"].unique():
         sub = grouped[grouped["ensemble_name"] == ensemble_name].sort_values("threshold")
@@ -269,9 +313,143 @@ def main() -> None:
     ax.set_ylabel("Mean coverage (fraction confident)")
     ax.set_ylim(0, 1)
     ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
-    fig.tight_layout()
-    fig.savefig(visuals_dir / "ensemble_coverage_vs_threshold.png", dpi=200, bbox_inches="tight")
+    _save_fig(fig, visuals_dir / "ensemble_coverage_vs_threshold.png")
     plt.close(fig)
+
+    # (3) Accuracy–Coverage Tradeoff (Pareto curve per ensemble)
+    trade = (
+        ens_df.groupby(["ensemble_name", "threshold"], as_index=False)
+        .agg(mean_conf=("ensemble_acc_confident", "mean"), mean_cov=("ensemble_coverage", "mean"))
+        .sort_values(["ensemble_name", "threshold"])
+    )
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for ensemble_name in sorted(trade["ensemble_name"].unique()):
+        sub = trade[trade["ensemble_name"] == ensemble_name]
+        ax.plot(sub["mean_cov"], sub["mean_conf"], marker="o", linewidth=2, label=ensemble_name)
+        for _, r in sub.iterrows():
+            ax.text(r["mean_cov"], r["mean_conf"], f"{r['threshold']:.2f}", fontsize=7, ha="left", va="bottom")
+    ax.axhline(best_single_mean, linestyle="--", linewidth=1.2, alpha=0.8, color="black", label="Best-Single mean")
+    ax.set_title("Accuracy–Coverage Tradeoff (Mean across subjects)")
+    ax.set_xlabel("Mean coverage")
+    ax.set_ylabel("Mean confident accuracy")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+    _save_fig(fig, visuals_dir / "tradeoff_conf_acc_vs_coverage.png")
+    plt.close(fig)
+
+    # (4/5) Stats-test visuals (paired t-test + mean delta), using precomputed CSV
+    stats_path = BASE_DIR / "outputs" / "ensemble_v2" / "stats_tests_confident_vs_best.csv"
+    if stats_path.exists():
+        stats_df = load_stats_tests(stats_path)
+
+        # Map stats-test ensemble names to the display names used in grid plots.
+        name_map = {
+            "LDA_SVM_RF_global_grid": "Ablation: LDA+SVM+RF (global)",
+            "LDA_SVM_baseline_subject_grid": "Main: LDA+SVM (subj-weights)",
+            "LDA_SVM_equal_grid": "Main: LDA+SVM (equal)",
+            "Main: LDA+SVM (equal)": "Main: LDA+SVM (equal)",
+        }
+        stats_df = stats_df.copy()
+        stats_df["ensemble_name"] = stats_df["ensemble_name"].map(lambda x: name_map.get(x, x))
+
+        # (4) Paired t-test p-value vs threshold
+        fig, ax = plt.subplots()
+        for ensemble_name in stats_df["ensemble_name"].unique():
+            sub = stats_df[stats_df["ensemble_name"] == ensemble_name].sort_values("threshold")
+            ax.plot(sub["threshold"], sub["paired_t_pvalue"], marker="o", linewidth=2, label=ensemble_name)
+        ax.axhline(0.05, linestyle="--", linewidth=1.2, alpha=0.8, color="black", label="p=0.05")
+        ax.set_yscale("log")
+        ax.set_title("Paired t-test p-value vs Threshold (Confident Acc vs Best-Single)")
+        ax.set_xlabel("Confidence threshold")
+        ax.set_ylabel("p-value (log scale)")
+        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+        _save_fig(fig, visuals_dir / "paired_ttest_pvalue_vs_threshold.png")
+        plt.close(fig)
+
+        # (5) Mean (Confident Acc − Best-Single) vs threshold
+        fig, ax = plt.subplots()
+        for ensemble_name in stats_df["ensemble_name"].unique():
+            sub = stats_df[stats_df["ensemble_name"] == ensemble_name].sort_values("threshold")
+            ax.plot(sub["threshold"], sub["mean_diff_conf_minus_best"], marker="o", linewidth=2, label=ensemble_name)
+        ax.axhline(0.0, linestyle="--", linewidth=1.2, alpha=0.8, color="black", label="no improvement")
+        ax.set_title("Mean (Confident Acc − Best-Single) vs Threshold")
+        ax.set_xlabel("Confidence threshold")
+        ax.set_ylabel("Mean accuracy difference")
+        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+        _save_fig(fig, visuals_dir / "mean_diff_conf_vs_best_vs_threshold.png")
+        plt.close(fig)
+
+    # (6) Per-Subject Confident Accuracy at Threshold 0.60
+    try:
+        baseline_best = load_baseline_per_subject()
+        ens_raw = ens_df.copy()
+        ens_raw["subject"] = pd.to_numeric(ens_raw["subject"], errors="raise").astype(int)
+        ens_raw = ens_raw.merge(baseline_best, on="subject", how="left")
+
+        thr = 0.60
+        snap = ens_raw[ens_raw["threshold"] == thr].copy()
+        if not snap.empty:
+            fig, ax = plt.subplots(figsize=(11, 5))
+            x = [f"S{s}" for s in sorted(snap["subject"].unique().tolist())]
+            best_by_subject = baseline_best.sort_values("subject")["best_acc"].to_numpy(dtype=float)
+            ax.plot(x, best_by_subject, marker="o", linewidth=2, color="black", label="Best-Single")
+            for ens_name in sorted(snap["ensemble_name"].unique()):
+                vals = (
+                    snap[snap["ensemble_name"] == ens_name]
+                    .sort_values("subject")["ensemble_acc_confident"]
+                    .to_numpy(dtype=float)
+                )
+                ax.plot(x, vals, marker="o", linewidth=2, label=ens_name)
+            ax.set_title("Per-Subject Confident Accuracy at Threshold 0.60")
+            ax.set_xlabel("Subject")
+            ax.set_ylabel("Accuracy (confident trials)")
+            ax.set_ylim(0, 1)
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+            _save_fig(fig, visuals_dir / "per_subject_conf_acc_t0.60.png")
+            plt.close(fig)
+    except Exception:
+        pass
+
+    # (7) Heatmap: Ablation (global) — (Conf Acc − Best-Single) by Subject/Threshold
+    try:
+        baseline_best = load_baseline_per_subject()
+        ens_raw = ens_df.copy()
+        ens_raw["subject"] = pd.to_numeric(ens_raw["subject"], errors="raise").astype(int)
+        ens_raw = ens_raw.merge(baseline_best, on="subject", how="left")
+        ens_raw["diff_conf_minus_best"] = ens_raw["ensemble_acc_confident"] - ens_raw["best_acc"]
+
+        ablation_name = "Ablation: LDA+SVM+RF (global)"
+        sub = ens_raw[ens_raw["ensemble_name"] == ablation_name].copy()
+        if not sub.empty:
+            thresholds = sorted(sub["threshold"].unique().tolist())
+            subjects = sorted(sub["subject"].unique().tolist())
+            pivot_diff = (
+                sub.pivot_table(index="subject", columns="threshold", values="diff_conf_minus_best", aggfunc="mean")
+                .reindex(index=subjects, columns=thresholds)
+            )
+            fig, ax = plt.subplots(figsize=(10, 6))
+            vmax = float(
+                max(
+                    abs(pivot_diff.min().min(skipna=True)),
+                    abs(pivot_diff.max().max(skipna=True)),
+                )
+            ) if pivot_diff.size else 0.2
+            im = _heatmap(
+                ax,
+                pivot_diff,
+                thresholds,
+                [f"S{s}" for s in subjects],
+                "Heatmap: Ablation (global) — (Conf Acc − Best-Single) by Subject/Threshold",
+                cmap="coolwarm",
+                vmin=-vmax,
+                vmax=vmax,
+            )
+            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            _save_fig(fig, visuals_dir / "heatmap_ablation_global_diff_conf_minus_best.png")
+            plt.close(fig)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

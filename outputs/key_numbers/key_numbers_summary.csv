@@ -1,22 +1,28 @@
 Metric,Value
-Mean LDA accuracy,0.604505759638851
-Mean SVM accuracy,0.5987770647641589
-Mean RF accuracy,0.5594455938406332
-Mean Best-Single accuracy,0.6141796352020186
-Mean Ensemble accuracy (all),0.569354491614928
-Mean Ensemble accuracy (confident),0.6768895898553235
-Mean Ensemble coverage,0.5204352289662221
-SD LDA accuracy (across subjects),0.1576015173226967
-SD SVM accuracy (across subjects),0.1564066767736796
-SD RF accuracy (across subjects),0.1703307094589663
-SD Best-Single accuracy (across subjects),0.14926794249332118
-"SD Ensemble accuracy (all, across subjects)",0.1492601620082158
-"SD Ensemble accuracy (confident, across subjects)",0.11132698051228
-SD Ensemble coverage (across subjects),0.2719822242012742
-Ensemble confidence threshold (max prob),0.55
-Best baseline model overall (count),"{'LDA': 5, 'SVM': 4}"
+Mean LDA accuracy,0.5984548448795273
+SD LDA accuracy (across subjects),0.15698095221472558
+Mean SVM accuracy,0.5763552166728211
+SD SVM accuracy (across subjects),0.1738098952977517
+Mean RF accuracy,0.543818349426335
+SD RF accuracy (across subjects),0.18520708311331363
+Mean Best-Single accuracy,0.6004041626183186
+SD Best-Single accuracy (across subjects),0.15911319740360258
+Operating threshold (max prob),0.6
+LDA_SVM_RF_global_grid mean confident accuracy @ 0.6,0.791069559760951
+LDA_SVM_RF_global_grid mean coverage @ 0.6,0.3816756362258769
+LDA_SVM_RF_global_grid mean (conf - Best) @ 0.6,0.1906653971426323
+LDA_SVM_RF_global_grid paired t-test p (conf vs Best) @ 0.6,0.0036348345129156
+LDA_SVM_RF_global_grid Levene p (conf vs Best) @ 0.6,0.6554272898323525
+LDA_SVM_baseline_subject_grid mean confident accuracy @ 0.6,0.7516332961245327
+LDA_SVM_baseline_subject_grid mean coverage @ 0.6,0.42289243214333466
+LDA_SVM_baseline_subject_grid mean (conf - Best) @ 0.6,0.15122913350621403
+LDA_SVM_baseline_subject_grid paired t-test p (conf vs Best) @ 0.6,0.0081043487238094
+LDA_SVM_baseline_subject_grid Levene p (conf vs Best) @ 0.6,0.343564798315395
+Main: LDA+SVM (equal) mean confident accuracy @ 0.6,0.7009137666644097
+Main: LDA+SVM (equal) mean coverage @ 0.6,0.47557327182778447
+Main: LDA+SVM (equal) mean (conf - Best) @ 0.6,0.1005096040460911
+Main: LDA+SVM (equal) paired t-test p (conf vs Best) @ 0.6,0.0685880819543678
+Main: LDA+SVM (equal) Levene p (conf vs Best) @ 0.6,0.7982751594081869
 Confusion matrix (4x4),
 Cohen's kappa,
 Latency,
-Paired t-test p-value,
-Levene's test p-value,

@@ -92,12 +92,7 @@ def build_models(random_state: int) -> Dict[str, Pipeline]:
         ),
     }
 
-
-def maybe_calibrate_models(
-    models: Dict[str, Pipeline],
-    method: str,
-    cv: int,
-) -> Dict[str, Pipeline]:
+def maybe_calibrate_models(models: Dict[str, Pipeline], method: str, cv: int,) -> Dict[str, Pipeline]:
     """
     Calibrate probabilities for soft voting + thresholding.
     - Calibrates SVM and RF (LDA is typically fine as-is).
@@ -171,13 +166,7 @@ def baseline_global_weights() -> Optional[Dict[str, float]]:
         "RF": float(df["RF_mean_acc"].mean()),
     }
 
-def oof_predict_proba(
-    X: np.ndarray,
-    y: np.ndarray,
-    models: Dict[str, Pipeline],
-    n_splits: int,
-    random_state: int,
-) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline], n_splits: int, random_state: int,) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     classes = np.unique(y)
     n_classes = len(classes)
@@ -206,7 +195,6 @@ def ensemble_proba(proba: Dict[str, np.ndarray], weights: Dict[str, float]) -> n
         p_ens += w[name] * proba[name]
     return p_ens
 
-
 def threshold_metrics(y: np.ndarray, p_ens: np.ndarray, threshold: float) -> Dict[str, float]:
     pred_all = p_ens.argmax(axis=1)
     acc_all = float(accuracy_score(y, pred_all))
@@ -226,7 +214,6 @@ def threshold_metrics(y: np.ndarray, p_ens: np.ndarray, threshold: float) -> Dic
         "ensemble_coverage": coverage,
     }
 
-
 def _t_confidence_interval(values: np.ndarray, alpha: float = 0.05) -> Dict[str, float]:
     values = np.asarray(values, dtype=float)
     values = values[~np.isnan(values)]
@@ -244,7 +231,6 @@ def _t_confidence_interval(values: np.ndarray, alpha: float = 0.05) -> Dict[str,
     half = float(tcrit * sem)
     return {"n": n, "mean": mean, "sd": sd, "ci_low": mean - half, "ci_high": mean + half}
 
-
 def _paired_ttest(a: np.ndarray, b: np.ndarray) -> Dict[str, float]:
     a = np.asarray(a, dtype=float)
     b = np.asarray(b, dtype=float)
@@ -258,7 +244,6 @@ def _paired_ttest(a: np.ndarray, b: np.ndarray) -> Dict[str, float]:
 
     t_stat, p_value = stats.ttest_rel(a, b)
     return {"n": n, "t_stat": float(t_stat), "p_value": float(p_value)}
-
 
 def main():
     parser = argparse.ArgumentParser()
