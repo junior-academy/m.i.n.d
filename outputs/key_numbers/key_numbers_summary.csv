@@ -1,0 +1,22 @@
+Metric,Value
+Mean LDA accuracy,0.604505759638851
+Mean SVM accuracy,0.5987770647641589
+Mean RF accuracy,0.5594455938406332
+Mean Best-Single accuracy,0.6141796352020186
+Mean Ensemble accuracy (all),0.569354491614928
+Mean Ensemble accuracy (confident),0.6768895898553235
+Mean Ensemble coverage,0.5204352289662221
+SD LDA accuracy (across subjects),0.1576015173226967
+SD SVM accuracy (across subjects),0.1564066767736796
+SD RF accuracy (across subjects),0.1703307094589663
+SD Best-Single accuracy (across subjects),0.14926794249332118
+"SD Ensemble accuracy (all, across subjects)",0.1492601620082158
+"SD Ensemble accuracy (confident, across subjects)",0.11132698051228
+SD Ensemble coverage (across subjects),0.2719822242012742
+Ensemble confidence threshold (max prob),0.55
+Best baseline model overall (count),"{'LDA': 5, 'SVM': 4}"
+Confusion matrix (4x4),
+Cohen's kappa,
+Latency,
+Paired t-test p-value,
+Levene's test p-value,

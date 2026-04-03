@@ -10,10 +10,15 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis # lda
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier # random forest classifier
 
-from mne.decoding import CSP # common spatial patterns for feature extraction
+try:
+    from mne.decoding import CSP  # type: ignore
+except ModuleNotFoundError:
+    # Fall back to a minimal local CSP implementation so the repo runs without mne installed.
+    from csp import CSP  # common spatial patterns for feature extraction
 
-DATA_DIR = Path('analysis_results')
-OUTPUT_DIR = Path('outputs')
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "analysis_results"
+OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
 
 N_SPLITS = 5

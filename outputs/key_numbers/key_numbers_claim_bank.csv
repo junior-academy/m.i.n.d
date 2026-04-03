@@ -1,0 +1,5 @@
+Claim,Supported?,Metric that proves it
+Ensemble outperformed best single model on average,No,mean_diff=-0.044825
+Ensemble was more stable across subjects (all acc),Yes,"sd_ens_all=0.149260, sd_best=0.149268"
+System shows agreement beyond chance,Missing,Cohen's kappa
+System is fast enough for practical use,Missing,Latency
