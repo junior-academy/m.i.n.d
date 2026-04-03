@@ -1,0 +1,23 @@
+{
+  "baseline_results_csv": "/Users/kevinzhou/Desktop/kev-personal/jr-academy/m.i.n.d/outputs/classification_results.csv",
+  "calibrate": "sigmoid",
+  "calibration_cv": 3,
+  "data_dir": "/Users/kevinzhou/Desktop/kev-personal/jr-academy/m.i.n.d/analysis_results",
+  "models": [
+    "LDA",
+    "SVM"
+  ],
+  "n_splits": 5,
+  "preset": "main",
+  "random_state": 42,
+  "threshold": 0.75,
+  "threshold_grid": [
+    0.0,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75
+  ],
+  "weights": "baseline_subject"
+}

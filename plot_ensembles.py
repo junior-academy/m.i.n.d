@@ -120,17 +120,17 @@ def load_ensemble_grids() -> pd.DataFrame:
         (
             ensemble_v2_dir / "LDA_SVM_equal_grid.csv",
             ensemble_v2_dir / "models-LDA_SVM__weights-equal" / "threshold_metrics.csv",
-            "LDA+SVM equal",
+            "Main: LDA+SVM (equal)",
         ),
         (
             ensemble_v2_dir / "LDA_SVM_RF_global_grid.csv",
             ensemble_v2_dir / "models-LDA_SVM_RF__weights-baseline_global" / "threshold_metrics.csv",
-            "All 3 global",
+            "Ablation: LDA+SVM+RF (global)",
         ),
         (
             ensemble_v2_dir / "LDA_SVM_baseline_subject_grid.csv",
             ensemble_v2_dir / "models-LDA_SVM__weights-baseline_subject" / "threshold_metrics.csv",
-            "LDA+SVM subj-weights",
+            "Main: LDA+SVM (subj-weights)",
         ),
     ]
 

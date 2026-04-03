@@ -9,6 +9,18 @@ def preprocess_subject(subject):
     
     # Load raw data
     raw = mne.io.read_raw_gdf(f'{DATA_PATH}/{subject}.gdf', preload=True)
+
+    # Ensure EOG channels are correctly typed so we can drop them later.
+    # Some GDF readers may import all channels as EEG unless we explicitly set types.
+    eog_candidates = [ch for ch in raw.ch_names if "EOG" in ch.upper()]
+    if eog_candidates:
+        raw.set_channel_types({ch: "eog" for ch in eog_candidates})
+    else:
+        # Fallback for BCIC IV 2a: last 3 channels are EOG (22 EEG + 3 EOG = 25 total).
+        if raw.info["nchan"] >= 25:
+            assumed_eog = raw.ch_names[-3:]
+            raw.set_channel_types({ch: "eog" for ch in assumed_eog})
+            print(f"Warning: No 'EOG' channels found by name; assuming last 3 are EOG: {assumed_eog}")
     
     # Butterworth Bandpass filter (8-30 Hz)
     # isolates Mu & Beta rhythms relevant for motor imagery
@@ -20,16 +32,22 @@ def preprocess_subject(subject):
     ica.fit(raw)
     ica.exclude = []
     
-    # Auto-detect EOG artifacts
-    eog_indices, _ = ica.find_bads_eog(raw, ch_name='EOG-left')
-    ica.exclude.extend(eog_indices)
+    # Auto-detect EOG artifacts (use any available EOG channel)
+    eog_picks = mne.pick_types(raw.info, eog=True)
+    if len(eog_picks) > 0:
+        eog_name = raw.ch_names[int(eog_picks[0])]
+        eog_indices, _ = ica.find_bads_eog(raw, ch_name=eog_name)
+        ica.exclude.extend(eog_indices)
+    else:
+        print("Warning: No EOG channels available for ICA EOG artifact detection.")
     
     print(f"Excluded {len(ica.exclude)} ICA components (eye/muscle artifacts)")
     
     ica.apply(raw)
     
-    # Pick only EEG channels
-    raw.pick(['eeg'])
+    # Pick only EEG channels (drop EOG and other non-EEG)
+    raw.pick_types(eeg=True, eog=False, stim=False, misc=False)
+    print(f"Remaining channels: {raw.info['nchan']}, names: {raw.ch_names}")
     
     # Epoching around cues (769-772), 4.5s window
     events, event_id = mne.events_from_annotations(raw)
