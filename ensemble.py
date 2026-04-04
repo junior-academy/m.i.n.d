@@ -10,16 +10,13 @@ Outputs:
 """
 
 from __future__ import annotations
-
 import argparse
 import json
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
-
 import numpy as np
 import pandas as pd
-
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
@@ -34,18 +31,15 @@ except ModuleNotFoundError:
     # Fall back to a minimal local CSP implementation so the repo runs without mne installed.
     from csp import CSP
 
-
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "analysis_results"
 BASELINE_RESULTS_CSV = BASE_DIR / "outputs" / "classification_results.csv"
-
 
 def subject_key(path: Path):
     nums = re.findall(r"\d+", path.stem)
     if nums:
         return int(nums[0])
     return path.stem
-
 
 def find_xy_files(data_dir: Path) -> List[Tuple[Path, Path]]:
     x_files = sorted([p for p in data_dir.glob("X_*.npy")], key=subject_key)
@@ -54,14 +48,11 @@ def find_xy_files(data_dir: Path) -> List[Tuple[Path, Path]]:
         raise ValueError(f"Mismatch: {len(x_files)} X files but {len(y_files)} y files")
     return list(zip(x_files, y_files))
 
-
 def load_subject(x_path: Path, y_path: Path) -> Tuple[np.ndarray, np.ndarray]:
-    X = np.load(x_path)
-    y = np.load(y_path)
+    X = np.load(x_path); y = np.load(y_path)
     le = LabelEncoder()
     y = le.fit_transform(y)
     return X, y
-
 
 def build_models(random_state: int) -> Dict[str, Pipeline]:
     return {
@@ -92,14 +83,12 @@ def build_models(random_state: int) -> Dict[str, Pipeline]:
         ),
     }
 
-
 def _normalize_weights(weights: Dict[str, float], model_names: Iterable[str]) -> Dict[str, float]:
     w = {k: float(weights.get(k, 0.0)) for k in model_names}
     total = sum(max(0.0, v) for v in w.values())
     if total <= 0:
         return {k: 1.0 / len(w) for k in w}
     return {k: max(0.0, v) / total for k, v in w.items()}
-
 
 def weights_from_baseline(subject_id: int) -> Optional[Dict[str, float]]:
     if not BASELINE_RESULTS_CSV.exists():
@@ -115,14 +104,7 @@ def weights_from_baseline(subject_id: int) -> Optional[Dict[str, float]]:
         "RF": float(row.get("RF_mean_acc", np.nan)),
     }
 
-
-def oof_predict_proba(
-    X: np.ndarray,
-    y: np.ndarray,
-    models: Dict[str, Pipeline],
-    n_splits: int,
-    random_state: int,
-) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline], n_splits: int, random_state: int) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     classes = np.unique(y)
     n_classes = len(classes)
@@ -144,12 +126,7 @@ def oof_predict_proba(
             raise RuntimeError(f"OOF probabilities not fully populated for {name}")
     return proba, classes
 
-
-def ensemble_from_proba(
-    proba: Dict[str, np.ndarray],
-    weights: Dict[str, float],
-    threshold: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def ensemble_from_proba(proba: Dict[str, np.ndarray], weights: Dict[str, float], threshold: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     model_names = list(proba.keys())
     w = _normalize_weights(weights, model_names)
     p_ens = np.zeros_like(next(iter(proba.values())))
@@ -161,7 +138,6 @@ def ensemble_from_proba(
     pred_thresholded = pred.copy()
     pred_thresholded[~confident] = -1
     return p_ens, pred_thresholded, max_prob
-
 
 def main():
     parser = argparse.ArgumentParser()

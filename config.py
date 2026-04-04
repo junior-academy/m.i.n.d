@@ -3,14 +3,16 @@ Configuration parameters for motor imagery BCI analysis
 """
 import numpy as np
 import os
+from pathlib import Path
 
 # ICA components:
 ICA_N_COMPONENTS = 20
 
 # File paths
-DATA_PATH = 'data/BCICIV_2a_gdf'
-OUTPUT_PATH = 'analysis_results'
-PLOTS_PATH = os.path.join(OUTPUT_PATH, 'plots')
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = str(BASE_DIR / "data" / "BCICIV_2a_gdf")
+OUTPUT_PATH = str(BASE_DIR / "analysis_results")
+PLOTS_PATH = str(Path(OUTPUT_PATH) / "plots")
 
 # Dataset parameters
 SUBJECTS_TRAIN = ['A01T', 'A02T', 'A03T', 'A04T', 'A05T', 'A06T', 'A07T', 'A08T', 'A09T']

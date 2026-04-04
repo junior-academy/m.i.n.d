@@ -122,15 +122,47 @@ def main():
     results_df = results_df.sort_values("subject")
     results_df.to_csv(OUTPUT_DIR / "classification_results.csv", index=False)
 
-    summary = pd.DataFrame([{
-        "LDA_mean": results_df["LDA_mean_acc"].mean(),
-        "SVM_mean": results_df["SVM_mean_acc"].mean(),
-        "RF_mean": results_df["RF_mean_acc"].mean(),
-        "LDA_subject_std": results_df["LDA_mean_acc"].std(),
-        "SVM_subject_std": results_df["SVM_mean_acc"].std(),
-        "RF_subject_std": results_df["RF_mean_acc"].std(),
-    }])
-    summary.to_csv(OUTPUT_DIR / "classification_summary.csv", index=False)
+    # Long-form summary (publication-friendly and easier to plot)
+    mean_cols = {
+        "LDA": "LDA_mean_acc",
+        "SVM": "SVM_mean_acc",
+        "RF": "RF_mean_acc",
+    }
+    sd_cols = {
+        "LDA": "LDA_mean_acc",
+        "SVM": "SVM_mean_acc",
+        "RF": "RF_mean_acc",
+    }
+
+    best_single_mean = float(results_df["best_acc"].mean())
+    best_single_sd = float(results_df["best_acc"].std())
+
+    summary_long = pd.DataFrame(
+        [
+            {"model": "LDA", "mean_acc": float(results_df[mean_cols["LDA"]].mean()), "sd_acc": float(results_df[sd_cols["LDA"]].std())},
+            {"model": "SVM", "mean_acc": float(results_df[mean_cols["SVM"]].mean()), "sd_acc": float(results_df[sd_cols["SVM"]].std())},
+            {"model": "RF", "mean_acc": float(results_df[mean_cols["RF"]].mean()), "sd_acc": float(results_df[sd_cols["RF"]].std())},
+            {"model": "Best-Single", "mean_acc": best_single_mean, "sd_acc": best_single_sd},
+        ]
+    )
+    summary_long.to_csv(OUTPUT_DIR / "classification_summary.csv", index=False)
+
+    # Back-compat wide summary (kept for older tooling)
+    summary_wide = pd.DataFrame(
+        [
+            {
+                "LDA_mean": float(results_df["LDA_mean_acc"].mean()),
+                "SVM_mean": float(results_df["SVM_mean_acc"].mean()),
+                "RF_mean": float(results_df["RF_mean_acc"].mean()),
+                "LDA_subject_std": float(results_df["LDA_mean_acc"].std()),
+                "SVM_subject_std": float(results_df["SVM_mean_acc"].std()),
+                "RF_subject_std": float(results_df["RF_mean_acc"].std()),
+                "BestSingle_mean": best_single_mean,
+                "BestSingle_subject_std": best_single_sd,
+            }
+        ]
+    )
+    summary_wide.to_csv(OUTPUT_DIR / "classification_summary_wide.csv", index=False)
     print(f"Results saved to {OUTPUT_DIR / 'classification_results.csv'}")
     print(f"Summary saved to {OUTPUT_DIR / 'classification_summary.csv'}")
 
