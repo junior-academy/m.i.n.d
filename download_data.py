@@ -34,6 +34,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
+
 ROOT = Path("data")
 ROOT.mkdir(exist_ok=True)
 
@@ -64,13 +65,16 @@ DATASETS = {
 
 USER_AGENT = "Mozilla/5.0 (compatible; Kevin-BCI-Downloader/1.0)"
 
+
 def ensure_folder(path: Path):
     path.mkdir(parents=True, exist_ok=True)
+
 
 def session_with_headers() -> requests.Session:
     s = requests.Session()
     s.headers.update({"User-Agent": USER_AGENT})
     return s
+
 
 def filename_from_response(url: str, response: requests.Response, fallback: str) -> str:
     cd = response.headers.get("content-disposition", "")
@@ -80,6 +84,7 @@ def filename_from_response(url: str, response: requests.Response, fallback: str)
     parsed = urlparse(url)
     name = Path(parsed.path).name
     return name or fallback
+
 
 def download_file(url: str, dest: Path, timeout: int = 60) -> bool:
     if dest.exists() and dest.stat().st_size > 0:
@@ -102,8 +107,10 @@ def download_file(url: str, dest: Path, timeout: int = 60) -> bool:
         print(f"    Error: {e}")
         return False
 
+
 def normalize_subject(subject: str) -> str:
     return subject.lower().replace("_", "").replace("-", "")
+
 
 def link_matches_subject(link_text: str, href: str, subject: str, exts: list[str]) -> bool:
     blob = f"{link_text} {href}".lower()
@@ -112,6 +119,7 @@ def link_matches_subject(link_text: str, href: str, subject: str, exts: list[str
     has_subject = subject_norm in blob_norm
     has_ext = any(ext in href.lower() or ext in blob for ext in exts)
     return has_subject and has_ext
+
 
 def scrape_links(page_url: str, subjects: list[str], exts: list[str]) -> dict[str, str]:
     s = session_with_headers()
@@ -132,8 +140,10 @@ def scrape_links(page_url: str, subjects: list[str], exts: list[str]) -> dict[st
 
     return subject_links
 
+
 def direct_links_from_template(url_template: str, subjects: list[str]) -> dict[str, str]:
     return {subject: url_template.format(subject=subject) for subject in subjects}
+
 
 def choose_extension(url: str, default_ext: str = ".gdf") -> str:
     path = urlparse(url).path.lower()
@@ -142,11 +152,13 @@ def choose_extension(url: str, default_ext: str = ".gdf") -> str:
             return ext
     return default_ext
 
+
 def save_manifest(dataset_key: str, records: list[dict]):
     out = DATASETS[dataset_key]["folder"] / "download_manifest.json"
     with open(out, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2)
     print(f"\nSaved manifest: {out}")
+
 
 def run_dataset(dataset_key: str, mode: str, url_template: str | None, page_url: str | None):
     cfg = DATASETS[dataset_key]
@@ -222,6 +234,7 @@ def run_dataset(dataset_key: str, mode: str, url_template: str | None, page_url:
     print(f"\nCompleted {dataset_key}: {success_count}/{len(subjects)} successful")
     save_manifest(dataset_key, manifest)
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="Downloader/helper for BCI competition datasets.")
     p.add_argument(
@@ -248,9 +261,12 @@ def parse_args():
     )
     return p.parse_args()
 
+
 def main():
     args = parse_args()
+
     targets = ["iv2a", "iiia"] if args.dataset == "all" else [args.dataset]
+
     for dataset_key in targets:
         try:
             run_dataset(
@@ -263,6 +279,7 @@ def main():
             print(f"\nError while processing {dataset_key}: {e}")
 
     print("\nDone.")
+
 
 if __name__ == "__main__":
     main()

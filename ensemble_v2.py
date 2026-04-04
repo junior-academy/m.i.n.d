@@ -26,7 +26,6 @@ import pandas as pd
 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
@@ -38,15 +37,18 @@ try:
 except ModuleNotFoundError:
     from csp import CSP
 
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "analysis_results"
 BASELINE_RESULTS_CSV = BASE_DIR / "outputs" / "classification_results.csv"
+
 
 def subject_key(path: Path):
     nums = re.findall(r"\d+", path.stem)
     if nums:
         return int(nums[0])
     return path.stem
+
 
 def find_xy_files(data_dir: Path) -> List[Tuple[Path, Path]]:
     x_files = sorted([p for p in data_dir.glob("X_*.npy")], key=subject_key)
@@ -55,12 +57,14 @@ def find_xy_files(data_dir: Path) -> List[Tuple[Path, Path]]:
         raise ValueError(f"Mismatch: {len(x_files)} X files but {len(y_files)} y files")
     return list(zip(x_files, y_files))
 
+
 def load_subject(x_path: Path, y_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     X = np.load(x_path)
     y = np.load(y_path)
     le = LabelEncoder()
     y = le.fit_transform(y)
     return X, y
+
 
 def build_models(random_state: int) -> Dict[str, Pipeline]:
     csp_kwargs = dict(n_components=4, reg=None, log=True, norm_trace=False)
@@ -92,21 +96,6 @@ def build_models(random_state: int) -> Dict[str, Pipeline]:
         ),
     }
 
-def maybe_calibrate_models(models: Dict[str, Pipeline], method: str, cv: int,) -> Dict[str, Pipeline]:
-    """
-    Calibrate probabilities for soft voting + thresholding.
-    - Calibrates SVM and RF (LDA is typically fine as-is).
-    - Wraps the full pipeline (CSP + classifier) to avoid leakage.
-    """
-    if method == "none":
-        return models
-    out: Dict[str, Pipeline] = {}
-    for name, model in models.items():
-        if name in {"SVM", "RF"}:
-            out[name] = CalibratedClassifierCV(model, method=method, cv=cv)
-        else:
-            out[name] = model
-    return out
 
 def _parse_models(arg: str) -> List[str]:
     models = [m.strip().upper() for m in arg.split(",") if m.strip()]
@@ -123,6 +112,7 @@ def _parse_models(arg: str) -> List[str]:
             out.append(m)
     return out
 
+
 def _parse_thresholds(arg: str) -> List[float]:
     thresholds = [float(t.strip()) for t in arg.split(",") if t.strip()]
     if not thresholds:
@@ -132,12 +122,14 @@ def _parse_thresholds(arg: str) -> List[float]:
             raise ValueError(f"Thresholds must be in [0,1]; got {t}")
     return sorted(set(thresholds))
 
+
 def _normalize_weights(weights: Dict[str, float], model_names: Iterable[str]) -> Dict[str, float]:
     w = {k: float(weights.get(k, 0.0)) for k in model_names}
     total = sum(max(0.0, v) for v in w.values())
     if total <= 0:
         return {k: 1.0 / len(w) for k in w}
     return {k: max(0.0, v) / total for k, v in w.items()}
+
 
 def baseline_subject_weights(subject_id: int) -> Optional[Dict[str, float]]:
     if not BASELINE_RESULTS_CSV.exists():
@@ -153,6 +145,7 @@ def baseline_subject_weights(subject_id: int) -> Optional[Dict[str, float]]:
         "RF": float(row.get("RF_mean_acc", np.nan)),
     }
 
+
 def baseline_global_weights() -> Optional[Dict[str, float]]:
     if not BASELINE_RESULTS_CSV.exists():
         return None
@@ -166,7 +159,14 @@ def baseline_global_weights() -> Optional[Dict[str, float]]:
         "RF": float(df["RF_mean_acc"].mean()),
     }
 
-def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline], n_splits: int, random_state: int,) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+
+def oof_predict_proba(
+    X: np.ndarray,
+    y: np.ndarray,
+    models: Dict[str, Pipeline],
+    n_splits: int,
+    random_state: int,
+) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     classes = np.unique(y)
     n_classes = len(classes)
@@ -187,6 +187,7 @@ def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline],
             raise RuntimeError(f"OOF probabilities not fully populated for {name}")
     return proba, classes
 
+
 def ensemble_proba(proba: Dict[str, np.ndarray], weights: Dict[str, float]) -> np.ndarray:
     model_names = list(proba.keys())
     w = _normalize_weights(weights, model_names)
@@ -194,6 +195,7 @@ def ensemble_proba(proba: Dict[str, np.ndarray], weights: Dict[str, float]) -> n
     for name in model_names:
         p_ens += w[name] * proba[name]
     return p_ens
+
 
 def threshold_metrics(y: np.ndarray, p_ens: np.ndarray, threshold: float) -> Dict[str, float]:
     pred_all = p_ens.argmax(axis=1)
@@ -214,36 +216,6 @@ def threshold_metrics(y: np.ndarray, p_ens: np.ndarray, threshold: float) -> Dic
         "ensemble_coverage": coverage,
     }
 
-def _t_confidence_interval(values: np.ndarray, alpha: float = 0.05) -> Dict[str, float]:
-    values = np.asarray(values, dtype=float)
-    values = values[~np.isnan(values)]
-    n = int(values.size)
-    if n == 0:
-        return {"n": 0, "mean": float("nan"), "sd": float("nan"), "ci_low": float("nan"), "ci_high": float("nan")}
-    mean = float(values.mean())
-    sd = float(values.std(ddof=1)) if n > 1 else 0.0
-    if n < 2:
-        return {"n": n, "mean": mean, "sd": sd, "ci_low": mean, "ci_high": mean}
-    from scipy import stats
-
-    sem = sd / (n**0.5)
-    tcrit = stats.t.ppf(1 - alpha / 2, df=n - 1)
-    half = float(tcrit * sem)
-    return {"n": n, "mean": mean, "sd": sd, "ci_low": mean - half, "ci_high": mean + half}
-
-def _paired_ttest(a: np.ndarray, b: np.ndarray) -> Dict[str, float]:
-    a = np.asarray(a, dtype=float)
-    b = np.asarray(b, dtype=float)
-    mask = ~(np.isnan(a) | np.isnan(b))
-    a = a[mask]
-    b = b[mask]
-    n = int(a.size)
-    if n < 2:
-        return {"n": n, "t_stat": float("nan"), "p_value": float("nan")}
-    from scipy import stats
-
-    t_stat, p_value = stats.ttest_rel(a, b)
-    return {"n": n, "t_stat": float(t_stat), "p_value": float(p_value)}
 
 def main():
     parser = argparse.ArgumentParser()
@@ -253,25 +225,12 @@ def main():
     parser.add_argument("--subjects", type=str, default="all", help="Comma-separated subject ids (e.g., 1,2,3) or 'all'")
     parser.add_argument("--n-splits", type=int, default=5)
     parser.add_argument("--random-state", type=int, default=42)
-    parser.add_argument(
-        "--preset",
-        choices=["main", "ablation_rf", "custom"],
-        default="main",
-        help="main=LDA+SVM (recommended), ablation_rf=LDA+SVM+RF, custom=use --models",
-    )
-    parser.add_argument("--models", type=str, default="LDA,SVM", help="Comma-separated subset: LDA,SVM,RF")
+    parser.add_argument("--models", type=str, default="LDA,SVM,RF", help="Comma-separated subset: LDA,SVM,RF")
     parser.add_argument(
         "--weights",
         choices=["equal", "baseline_subject", "baseline_global"],
         default="baseline_subject",
     )
-    parser.add_argument(
-        "--calibrate",
-        choices=["none", "sigmoid", "isotonic"],
-        default="sigmoid",
-        help="Calibrate probabilities for SVM/RF (recommended: sigmoid).",
-    )
-    parser.add_argument("--calibration-cv", type=int, default=3, help="CV folds for CalibratedClassifierCV")
     parser.add_argument("--threshold", type=float, default=0.55, help="Default threshold for subject_results.csv")
     parser.add_argument(
         "--threshold-grid",
@@ -285,19 +244,13 @@ def main():
         raise SystemExit("--threshold must be in [0,1]")
     thresholds = _parse_thresholds(args.threshold_grid)
 
-    if args.preset == "main":
-        model_list = ["LDA", "SVM"]
-    elif args.preset == "ablation_rf":
-        model_list = ["LDA", "SVM", "RF"]
-    else:
-        model_list = _parse_models(args.models)
+    model_list = _parse_models(args.models)
     all_models = build_models(random_state=args.random_state)
     models = {name: all_models[name] for name in model_list}
-    models = maybe_calibrate_models(models, method=args.calibrate, cv=args.calibration_cv)
 
     run_suffix = args.run_name.strip()
     if not run_suffix:
-        run_suffix = f"models-{'_'.join(model_list)}__weights-{args.weights}__cal-{args.calibrate}"
+        run_suffix = f"models-{'_'.join(model_list)}__weights-{args.weights}"
     out_dir = args.out_dir / run_suffix
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -313,11 +266,8 @@ def main():
     threshold_rows = []
 
     config = {
-        "preset": args.preset,
         "models": model_list,
         "weights": args.weights,
-        "calibrate": args.calibrate,
-        "calibration_cv": args.calibration_cv,
         "threshold": args.threshold,
         "threshold_grid": thresholds,
         "n_splits": args.n_splits,
@@ -326,12 +276,6 @@ def main():
         "baseline_results_csv": str(BASELINE_RESULTS_CSV),
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
-
-    baseline_best_acc_by_subject: Optional[pd.Series] = None
-    if BASELINE_RESULTS_CSV.exists():
-        baseline_df = pd.read_csv(BASELINE_RESULTS_CSV)
-        if {"subject", "best_acc"}.issubset(baseline_df.columns):
-            baseline_best_acc_by_subject = baseline_df.set_index("subject")["best_acc"]
 
     for x_path, y_path in pairs:
         subject_id = int(subject_key(x_path))
@@ -369,11 +313,6 @@ def main():
         # Default threshold metrics for subject_results.csv
         default_metrics = threshold_metrics(y=y, p_ens=p_ens, threshold=args.threshold)
 
-        best_single_acc = (
-            float(baseline_best_acc_by_subject.loc[subject_id])
-            if baseline_best_acc_by_subject is not None and subject_id in baseline_best_acc_by_subject.index
-            else float("nan")
-        )
         subject_rows.append(
             {
                 "subject": subject_id,
@@ -382,7 +321,6 @@ def main():
                 "n_timepoints": int(X.shape[2]),
                 "n_classes": int(len(classes)),
                 "weights": json.dumps(weights, sort_keys=True),
-                "best_single_acc": best_single_acc,
                 **per_model_acc,
                 **default_metrics,
             }
@@ -409,69 +347,12 @@ def main():
             pred_df[f"p_ens_c{int(cls)}"] = p_ens[:, i]
         pred_df.to_csv(out_dir / f"predictions_subject_{subject_id}.csv", index=False)
 
-    subject_results_df = pd.DataFrame(subject_rows).sort_values("subject")
-    threshold_metrics_df = pd.DataFrame(threshold_rows).sort_values(["subject", "threshold"])
-
-    # Add deltas vs best-single (default threshold)
-    subject_results_df["delta_all_vs_best"] = subject_results_df["ensemble_acc_all"] - subject_results_df["best_single_acc"]
-    subject_results_df["delta_conf_vs_best"] = (
-        subject_results_df["ensemble_acc_confident"] - subject_results_df["best_single_acc"]
-    )
-
-    subject_results_df.to_csv(out_dir / "subject_results.csv", index=False)
-    threshold_metrics_df.to_csv(out_dir / "threshold_metrics.csv", index=False)
-
-    # Run-level summary + paired tests (defensible claims)
-    summary_rows = []
-    for col in ["ensemble_acc_all", "ensemble_acc_confident", "ensemble_coverage", "best_single_acc", "delta_all_vs_best", "delta_conf_vs_best"]:
-        stats = _t_confidence_interval(subject_results_df[col].to_numpy(dtype=float))
-        summary_rows.append(
-            {
-                "metric": col,
-                "n": stats["n"],
-                "mean": stats["mean"],
-                "sd": stats["sd"],
-                "ci_low_95": stats["ci_low"],
-                "ci_high_95": stats["ci_high"],
-            }
-        )
-
-    t_all = _paired_ttest(
-        subject_results_df["ensemble_acc_all"].to_numpy(dtype=float),
-        subject_results_df["best_single_acc"].to_numpy(dtype=float),
-    )
-    t_conf = _paired_ttest(
-        subject_results_df["ensemble_acc_confident"].to_numpy(dtype=float),
-        subject_results_df["best_single_acc"].to_numpy(dtype=float),
-    )
-    summary_rows.append(
-        {
-            "metric": "paired_ttest_all_vs_best",
-            "n": t_all["n"],
-            "mean": float("nan"),
-            "sd": float("nan"),
-            "ci_low_95": float("nan"),
-            "ci_high_95": float("nan"),
-            "t_stat": t_all["t_stat"],
-            "p_value": t_all["p_value"],
-        }
-    )
-    summary_rows.append(
-        {
-            "metric": "paired_ttest_confident_vs_best",
-            "n": t_conf["n"],
-            "mean": float("nan"),
-            "sd": float("nan"),
-            "ci_low_95": float("nan"),
-            "ci_high_95": float("nan"),
-            "t_stat": t_conf["t_stat"],
-            "p_value": t_conf["p_value"],
-        }
-    )
-    pd.DataFrame(summary_rows).to_csv(out_dir / "run_summary.csv", index=False)
+    pd.DataFrame(subject_rows).sort_values("subject").to_csv(out_dir / "subject_results.csv", index=False)
+    pd.DataFrame(threshold_rows).sort_values(["subject", "threshold"]).to_csv(out_dir / "threshold_metrics.csv", index=False)
     print(f"[ensemble_v2] Wrote {out_dir / 'subject_results.csv'}")
     print(f"[ensemble_v2] Wrote {out_dir / 'threshold_metrics.csv'}")
-    print(f"[ensemble_v2] Wrote {out_dir / 'run_summary.csv'}")
+
 
 if __name__ == "__main__":
     main()
+

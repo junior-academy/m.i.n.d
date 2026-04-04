@@ -1,0 +1,19 @@
+{
+  "baseline_results_csv": "/Users/kevinzhou/Desktop/kev-personal/jr-academy/m.i.n.d/outputs/classification_results.csv",
+  "data_dir": "/Users/kevinzhou/Desktop/kev-personal/jr-academy/m.i.n.d/analysis_results",
+  "models": [
+    "LDA",
+    "SVM"
+  ],
+  "n_splits": 5,
+  "random_state": 42,
+  "threshold": 0.55,
+  "threshold_grid": [
+    0.0,
+    0.55,
+    0.6,
+    0.65,
+    0.7
+  ],
+  "weights": "baseline_subject"
+}
