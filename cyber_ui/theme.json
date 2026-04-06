@@ -1,0 +1,184 @@
+{
+  "fonts": {
+    "default": {
+      "name": "mono",
+      "size": 16,
+      "bold": false,
+      "italic": false
+    }
+  },
+  "colours": {
+    "bg": "#0a0a0f",
+    "panel_bg": "#0d1117",
+    "text": "#e8f4f8",
+    "text_dim": "#7a9bb5",
+    "cyan": "#00f5ff",
+    "magenta": "#ff00aa",
+    "success": "#50dc8c",
+    "danger": "#e65555"
+  },
+  "ui_element": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_border": "#00f5ff",
+      "hover_border": "#7ffbff",
+      "selected_border": "#ff00aa",
+      "normal_text": "#e8f4f8",
+      "disabled_text": "#7a9bb5"
+    },
+    "misc": {
+      "shape": "rounded_rectangle",
+      "shape_corner_radius": 6,
+      "shadow_width": 0
+    }
+  },
+  "#nav_bar": {
+    "colours": {
+      "dark_bg": "#0a0a0f",
+      "normal_border": "#00f5ff"
+    },
+    "misc": {
+      "shape": "rectangle"
+    }
+  },
+  "#nav_title": {
+    "colours": {
+      "normal_text": "#00f5ff"
+    },
+    "font": {
+      "name": "mono",
+      "size": 18
+    }
+  },
+  "#nav_tab": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_bg": "#0d1117",
+      "hovered_bg": "#0f1820",
+      "active_bg": "#0f1820",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa",
+      "normal_text": "#7a9bb5",
+      "hovered_text": "#e8f4f8",
+      "active_text": "#ff00aa"
+    },
+    "misc": {
+      "shape": "rounded_rectangle",
+      "shape_corner_radius": 6
+    }
+  },
+  "#left_sidebar": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_border": "#00f5ff"
+    }
+  },
+  "#right_panel": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_border": "#00f5ff"
+    }
+  },
+  "#section_header": {
+    "font": {
+      "name": "mono",
+      "size": 16
+    },
+    "colours": {
+      "normal_text": "#ff00aa"
+    }
+  },
+  "#field_label": {
+    "font": {
+      "name": "mono",
+      "size": 14
+    },
+    "colours": {
+      "normal_text": "#7a9bb5"
+    }
+  },
+  "#primary_button": {
+    "font": {
+      "name": "mono",
+      "size": 16
+    },
+    "colours": {
+      "normal_bg": "#0d1117",
+      "hovered_bg": "#0f1820",
+      "active_bg": "#111b24",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa",
+      "normal_text": "#00f5ff",
+      "hovered_text": "#e8f4f8",
+      "active_text": "#ff00aa"
+    }
+  },
+  "#secondary_button": {
+    "font": {
+      "name": "mono",
+      "size": 14
+    },
+    "colours": {
+      "normal_bg": "#0d1117",
+      "hovered_bg": "#0f1820",
+      "active_bg": "#111b24",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa",
+      "normal_text": "#7a9bb5",
+      "hovered_text": "#e8f4f8",
+      "active_text": "#ff00aa"
+    }
+  },
+  "#toggle_button": {
+    "font": {
+      "name": "mono",
+      "size": 14
+    },
+    "colours": {
+      "normal_bg": "#0d1117",
+      "hovered_bg": "#0f1820",
+      "active_bg": "#111b24",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa",
+      "normal_text": "#e8f4f8",
+      "hovered_text": "#e8f4f8",
+      "active_text": "#ff00aa"
+    }
+  },
+  "#text_entry": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_bg": "#0d1117",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa",
+      "normal_text": "#e8f4f8"
+    }
+  },
+  "#dropdown": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_bg": "#0d1117",
+      "hovered_bg": "#0f1820",
+      "selected_bg": "#111b24",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa",
+      "normal_text": "#e8f4f8",
+      "selected_text": "#ff00aa"
+    }
+  },
+  "#slider": {
+    "colours": {
+      "dark_bg": "#0d1117",
+      "normal_bg": "#0d1117",
+      "normal_border": "#00f5ff",
+      "hovered_border": "#7ffbff",
+      "active_border": "#ff00aa"
+    }
+  }
+}

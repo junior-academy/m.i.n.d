@@ -182,6 +182,57 @@ python3 m.i.n.d/plot_ensembles.py
 This script generates the “keep” set of figures into:
 - `m.i.n.d/outputs/visuals/`
 
+Keeper plots (paths):
+- `m.i.n.d/outputs/visuals/tradeoff_conf_acc_vs_coverage.png`
+- `m.i.n.d/outputs/visuals/ensemble_accuracy_confident_vs_threshold.png`
+- `m.i.n.d/outputs/visuals/paired_ttest_pvalue_vs_threshold.png`
+- `m.i.n.d/outputs/visuals/mean_diff_conf_vs_best_vs_threshold.png`
+- `m.i.n.d/outputs/visuals/per_subject_conf_acc_t0.60.png`
+- `m.i.n.d/outputs/visuals/heatmap_ablation_global_diff_conf_minus_best.png`
+- `m.i.n.d/outputs/visuals/ensemble_coverage_vs_threshold.png`
+
+## Pygame Visualizer (demo UI)
+
+`visualizer_pygame.py` is a lightweight demo UI that plays per-trial decoder outputs and shows:
+- ensemble FIRE/HOLD gate (threshold-controlled)
+- per-class probabilities
+- baseline models side-by-side (rolling accuracy; ★ marks current best baseline)
+- prosthetic-hand mock panel
+
+### Prereqs
+
+1) Make sure you have predictions CSVs from at least one `ensemble_v2` run:
+- `m.i.n.d/outputs/ensemble_v2/models-*/predictions_subject_<N>.csv`
+
+2) Install pygame:
+
+```bash
+python -m pip install pygame-ce
+```
+
+### Run
+
+If your git repo root is the `m.i.n.d/` folder:
+
+```bash
+python3 visualizer_pygame.py
+```
+
+If your repo root is the parent folder that contains `m.i.n.d/`:
+
+```bash
+python3 m.i.n.d/visualizer_pygame.py
+```
+
+### Controls
+
+- Menu: `UP/DOWN` patient, `LEFT/RIGHT` run set, `[` `]` threshold, `ENTER` start, `ESC` quit
+- Playback: `SPACE` play/pause, `LEFT/RIGHT` step, `TAB` next run (compare set), `R` reload CSVs, `M` back to menu
+
+## Vercel Dashboard (public results)
+
+If you have the sibling app folder `mind-dashboard/` (Next.js), see `mind-dashboard/README.md` for local run + Vercel deploy steps.
+
 ## Cleaning old outputs
 
 To reduce clutter without deleting data:
