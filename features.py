@@ -1,20 +1,29 @@
-from pathlib import Path
+from __future__ import annotations
+
+import argparse
 import re
+from pathlib import Path
+from typing import Dict, List, Sequence, Tuple
+
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import StratifiedKFold, cross_val_score # stratified k-fold cross-validation
+from sklearn.base import clone
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import GridSearchCV, StratifiedKFold  # stratified k-fold cross-validation
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis # lda
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis  # lda
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier # random forest classifier
+from sklearn.ensemble import RandomForestClassifier  # random forest classifier
 
 try:
     from mne.decoding import CSP  # type: ignore
 except ModuleNotFoundError:
     # Fall back to a minimal local CSP implementation so the repo runs without mne installed.
     from csp import CSP  # common spatial patterns for feature extraction
+
+from fbcsp import FBCSPFeatures
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "analysis_results"
@@ -50,42 +59,154 @@ def load_subject(x_path, y_path):
     y = le.fit_transform(y)
 
     return X, y
+    
+def _parse_bands_arg(arg: str) -> List[Tuple[float, float]]:
+    if not arg.strip():
+        raise ValueError("--bands must not be empty")
+    bands: List[Tuple[float, float]] = []
+    for part in arg.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" not in part:
+            raise ValueError(f"Invalid band '{part}'; expected 'lo-hi' (e.g., 8-12)")
+        lo_s, hi_s = part.split("-", 1)
+        lo = float(lo_s.strip())
+        hi = float(hi_s.strip())
+        if lo <= 0 or hi <= 0 or hi <= lo:
+            raise ValueError(f"Invalid band '{part}'; expected 0 < lo < hi")
+        bands.append((lo, hi))
+    if not bands:
+        raise ValueError("--bands must not be empty")
+    return bands
 
-def build_models():
-    models = { #clf = classifier, csp = common spatial patterns for feature extraction
-        "LDA": Pipeline([
-            ('csp', CSP(n_components=4, reg=None, log=True, norm_trace=False)),
-            ('clf', LinearDiscriminantAnalysis())
-        ]),
-        "SVM": Pipeline([
-            ("csp", CSP(n_components=4, reg=None, log=True, norm_trace=False)),
-            ("clf", SVC(kernel="rbf", C=1.0, gamma="scale"))
-        ]),
-        "RF": Pipeline([
-            ("csp", CSP(n_components=4, reg=None, log=True, norm_trace=False)),
-            ("clf", RandomForestClassifier(
-                n_estimators=100,
-                random_state=RANDOM_STATE,
-                n_jobs=-1
-            ))
-        ]),
+def build_models(
+    *,
+    features: str,
+    n_components: int,
+    sfreq: float,
+    bands: Sequence[Tuple[float, float]],
+    include_bandpower: bool,
+    random_state: int,
+) -> Dict[str, Pipeline]:
+    if features not in {"csp", "fbcsp"}:
+        raise ValueError(f"Unknown features='{features}'")
+
+    def make_feat():
+        if features == "csp":
+            return CSP(n_components=n_components, reg=None, log=True, norm_trace=False)
+        return FBCSPFeatures(
+            sfreq=float(sfreq),
+            bands=tuple((float(lo), float(hi)) for lo, hi in bands),
+            n_components=int(n_components),
+            include_bandpower=bool(include_bandpower),
+        )
+
+    return {
+        "LDA": Pipeline([("feat", make_feat()), ("clf", LinearDiscriminantAnalysis())]),
+        "SVM": Pipeline([("feat", make_feat()), ("clf", SVC(kernel="rbf", C=1.0, gamma="scale"))]),
+        "RF": Pipeline(
+            [
+                ("feat", make_feat()),
+                ("clf", RandomForestClassifier(n_estimators=100, random_state=random_state, n_jobs=-1)),
+            ]
+        ),
     }
-    return models
 
-def evaluate_subject(X, y, models):
+def evaluate_subject(
+    *,
+    X: np.ndarray,
+    y: np.ndarray,
+    models: Dict[str, Pipeline],
+    n_splits: int,
+    random_state: int,
+    tune: str,
+    tune_cv: int,
+):
     """Evaluate all models for a single subject using stratified k-fold cross-validation"""
     results = {}
-    skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
     for name, model in models.items():
-        scores = cross_val_score(model, X, y, cv=skf, scoring='accuracy', n_jobs=1)
-        results[f"{name}_mean_acc"] = scores.mean()
-        results[f"{name}_std_acc"] = scores.std()
+        scores: List[float] = []
+        for train_idx, test_idx in skf.split(X, y):
+            X_train, y_train = X[train_idx], y[train_idx]
+            X_test, y_test = X[test_idx], y[test_idx]
+
+            estimator = clone(model)
+            if tune == "small" and name == "SVM":
+                inner_cv = StratifiedKFold(n_splits=tune_cv, shuffle=True, random_state=random_state)
+                param_grid = {
+                    "feat__n_components": [4, 6, 8],
+                    "clf__C": [0.5, 1.0, 2.0],
+                    "clf__gamma": ["scale", 0.1, 0.01],
+                }
+                gs = GridSearchCV(
+                    estimator,
+                    param_grid=param_grid,
+                    scoring="accuracy",
+                    cv=inner_cv,
+                    n_jobs=-1,
+                    refit=True,
+                )
+                gs.fit(X_train, y_train)
+                estimator = gs.best_estimator_
+            else:
+                estimator.fit(X_train, y_train)
+
+            y_pred = estimator.predict(X_test)
+            scores.append(float(accuracy_score(y_test, y_pred)))
+
+        results[f"{name}_mean_acc"] = float(np.mean(scores))
+        results[f"{name}_std_acc"] = float(np.std(scores, ddof=1)) if len(scores) > 1 else 0.0
     return results
 
 def main():
-    pairs = find_xy_files(DATA_DIR)
-    models = build_models()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    parser.add_argument("--out-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument("--n-splits", type=int, default=N_SPLITS)
+    parser.add_argument("--random-state", type=int, default=RANDOM_STATE)
+    parser.add_argument(
+        "--features",
+        choices=["csp", "fbcsp"],
+        default="csp",
+        help="Feature extractor: csp (default) or fbcsp (filter-bank CSP).",
+    )
+    parser.add_argument("--n-components", type=int, default=4, help="CSP/FBCSP components per band (default: 4).")
+    parser.add_argument(
+        "--bands",
+        type=str,
+        default="8-12,12-16,16-20,20-30",
+        help="FBCSP sub-bands as 'lo-hi' pairs, comma-separated (default: 8-12,12-16,16-20,20-30).",
+    )
+    parser.add_argument("--sfreq", type=float, default=250.0, help="Sampling frequency (Hz) for FBCSP (default: 250).")
+    parser.add_argument(
+        "--include-bandpower",
+        action="store_true",
+        help="When --features fbcsp, also concatenate per-channel bandpower features per band.",
+    )
+    parser.add_argument(
+        "--tune",
+        choices=["none", "small"],
+        default="none",
+        help="Per-subject tuning (nested CV): small tunes SVM (feat__n_components, C, gamma).",
+    )
+    parser.add_argument("--tune-cv", type=int, default=3, help="Inner CV folds for --tune small (default: 3).")
+    args = parser.parse_args()
+
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    pairs = find_xy_files(args.data_dir)
+    bands = _parse_bands_arg(args.bands)
+    models = build_models(
+        features=args.features,
+        n_components=int(args.n_components),
+        sfreq=float(args.sfreq),
+        bands=bands,
+        include_bandpower=bool(args.include_bandpower),
+        random_state=int(args.random_state),
+    )
 
     all_results = []
     for x_path, y_path in pairs:
@@ -98,7 +219,15 @@ def main():
         print(f"X shape: {X.shape} | y shape: {y.shape} | class distribution: {class_counts}")
 
         try:
-            results = evaluate_subject(X, y, models)
+            results = evaluate_subject(
+                X=X,
+                y=y,
+                models=models,
+                n_splits=int(args.n_splits),
+                random_state=int(args.random_state),
+                tune=args.tune,
+                tune_cv=int(args.tune_cv),
+            )
         except Exception as e:
             print(f"Error evaluating Subject {subject_id}: {e}")
             continue
@@ -120,7 +249,7 @@ def main():
     results_df["best_acc"] = results_df[mean_cols].max(axis=1)
 
     results_df = results_df.sort_values("subject")
-    results_df.to_csv(OUTPUT_DIR / "classification_results.csv", index=False)
+    results_df.to_csv(args.out_dir / "classification_results.csv", index=False)
 
     # Long-form summary (publication-friendly and easier to plot)
     mean_cols = {
@@ -145,7 +274,7 @@ def main():
             {"model": "Best-Single", "mean_acc": best_single_mean, "sd_acc": best_single_sd},
         ]
     )
-    summary_long.to_csv(OUTPUT_DIR / "classification_summary.csv", index=False)
+    summary_long.to_csv(args.out_dir / "classification_summary.csv", index=False)
 
     # Back-compat wide summary (kept for older tooling)
     summary_wide = pd.DataFrame(
@@ -162,9 +291,9 @@ def main():
             }
         ]
     )
-    summary_wide.to_csv(OUTPUT_DIR / "classification_summary_wide.csv", index=False)
-    print(f"Results saved to {OUTPUT_DIR / 'classification_results.csv'}")
-    print(f"Summary saved to {OUTPUT_DIR / 'classification_summary.csv'}")
+    summary_wide.to_csv(args.out_dir / "classification_summary_wide.csv", index=False)
+    print(f"Results saved to {args.out_dir / 'classification_results.csv'}")
+    print(f"Summary saved to {args.out_dir / 'classification_summary.csv'}")
 
 if __name__ == "__main__":
     main()

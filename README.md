@@ -64,6 +64,16 @@ Preprocessing also saves a channel-selection report image per subject to:
 python3 m.i.n.d/features.py
 ```
 
+Optional upgrades (recommended experiments):
+
+```bash
+# Filter Bank CSP (FBCSP) + bandpower fusion
+python3 m.i.n.d/features.py --features fbcsp --include-bandpower
+
+# Light per-subject tuning for SVM (nested CV)
+python3 m.i.n.d/features.py --tune small
+```
+
 Outputs:
 - `m.i.n.d/outputs/classification_results.csv` (per-subject)
 - `m.i.n.d/outputs/classification_summary.csv` (long-form: LDA/SVM/RF/Best-Single rows)
@@ -83,6 +93,35 @@ python3 m.i.n.d/ensemble_v2.py \
   --threshold 0.75 \
   --threshold-grid 0.0,0.55,0.60,0.65,0.70,0.75
 ```
+
+Optional upgrades (recommended experiments):
+
+```bash
+# Filter Bank CSP (FBCSP) + bandpower fusion
+python3 m.i.n.d/ensemble_v2.py --preset main --features fbcsp --include-bandpower
+
+# Light per-subject tuning for SVM (nested CV)
+python3 m.i.n.d/ensemble_v2.py --preset main --tune small
+
+# Stacking meta-learner (logistic regression over base OOF probabilities)
+python3 m.i.n.d/ensemble_v2.py --preset main --ensemble-method stacking
+```
+
+Recommended “tuned FBCSP” run (slow, but often improves worst subjects):
+
+```bash
+python3 m.i.n.d/ensemble_v2.py \
+  --preset main \
+  --tune small \
+  --features fbcsp \
+  --include-bandpower \
+  --calibrate sigmoid \
+  --threshold 0.60 \
+  --threshold-grid 0.0,0.55,0.60,0.65,0.70,0.75
+```
+
+Notes:
+- `--tune small` uses nested CV inside the outer CV, so it can be significantly slower.
 
 Example: run the RF ablation:
 

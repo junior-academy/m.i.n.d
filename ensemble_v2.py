@@ -19,16 +19,18 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
+from sklearn.base import clone
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
 from sklearn.svm import SVC
@@ -37,6 +39,8 @@ try:
     from mne.decoding import CSP  # type: ignore
 except ModuleNotFoundError:
     from csp import CSP
+
+from fbcsp import FBCSPFeatures
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "analysis_results"
@@ -62,24 +66,59 @@ def load_subject(x_path: Path, y_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     y = le.fit_transform(y)
     return X, y
 
-def build_models(random_state: int) -> Dict[str, Pipeline]:
-    csp_kwargs = dict(n_components=4, reg=None, log=True, norm_trace=False)
+def _parse_bands_arg(arg: str) -> List[Tuple[float, float]]:
+    """
+    Parse a band string like: "8-12,12-16,16-20,20-30" -> [(8,12), ...]
+    """
+    if not arg.strip():
+        raise ValueError("--bands must not be empty")
+    bands: List[Tuple[float, float]] = []
+    for part in arg.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" not in part:
+            raise ValueError(f"Invalid band '{part}'; expected 'lo-hi' (e.g., 8-12)")
+        lo_s, hi_s = part.split("-", 1)
+        lo = float(lo_s.strip())
+        hi = float(hi_s.strip())
+        if lo <= 0 or hi <= 0 or hi <= lo:
+            raise ValueError(f"Invalid band '{part}'; expected 0 < lo < hi")
+        bands.append((lo, hi))
+    if not bands:
+        raise ValueError("--bands must not be empty")
+    return bands
+
+def build_models(
+    *,
+    random_state: int,
+    features: str,
+    n_components: int,
+    sfreq: float,
+    bands: Sequence[Tuple[float, float]],
+    include_bandpower: bool,
+) -> Dict[str, Pipeline]:
+    if features not in {"csp", "fbcsp"}:
+        raise ValueError(f"Unknown features='{features}'")
+
+    def make_feat():
+        if features == "csp":
+            return CSP(n_components=n_components, reg=None, log=True, norm_trace=False)
+        return FBCSPFeatures(
+            sfreq=float(sfreq),
+            bands=tuple((float(lo), float(hi)) for lo, hi in bands),
+            n_components=int(n_components),
+            include_bandpower=bool(include_bandpower),
+        )
+
     return {
-        "LDA": Pipeline(
-            [
-                ("csp", CSP(**csp_kwargs)),
-                ("clf", LinearDiscriminantAnalysis()),
-            ]
-        ),
+        "LDA": Pipeline([("feat", make_feat()), ("clf", LinearDiscriminantAnalysis())]),
         "SVM": Pipeline(
-            [
-                ("csp", CSP(**csp_kwargs)),
-                ("clf", SVC(kernel="rbf", C=1.0, gamma="scale", probability=True)),
-            ]
+            [("feat", make_feat()), ("clf", SVC(kernel="rbf", C=1.0, gamma="scale", probability=True))]
         ),
         "RF": Pipeline(
             [
-                ("csp", CSP(**csp_kwargs)),
+                ("feat", make_feat()),
                 (
                     "clf",
                     RandomForestClassifier(
@@ -91,22 +130,6 @@ def build_models(random_state: int) -> Dict[str, Pipeline]:
             ]
         ),
     }
-
-def maybe_calibrate_models(models: Dict[str, Pipeline], method: str, cv: int,) -> Dict[str, Pipeline]:
-    """
-    Calibrate probabilities for soft voting + thresholding.
-    - Calibrates SVM and RF (LDA is typically fine as-is).
-    - Wraps the full pipeline (CSP + classifier) to avoid leakage.
-    """
-    if method == "none":
-        return models
-    out: Dict[str, Pipeline] = {}
-    for name, model in models.items():
-        if name in {"SVM", "RF"}:
-            out[name] = CalibratedClassifierCV(model, method=method, cv=cv)
-        else:
-            out[name] = model
-    return out
 
 def _parse_models(arg: str) -> List[str]:
     models = [m.strip().upper() for m in arg.split(",") if m.strip()]
@@ -166,7 +189,58 @@ def baseline_global_weights() -> Optional[Dict[str, float]]:
         "RF": float(df["RF_mean_acc"].mean()),
     }
 
-def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline], n_splits: int, random_state: int,) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
+def _fit_for_fold(
+    *,
+    model_name: str,
+    base_model: Pipeline,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    tune: str,
+    tune_cv: int,
+    random_state: int,
+    calibrate: str,
+    calibration_cv: int,
+) -> object:
+    estimator = clone(base_model)
+
+    if tune == "small" and model_name == "SVM":
+        inner_cv = StratifiedKFold(n_splits=tune_cv, shuffle=True, random_state=random_state)
+        param_grid = {
+            "feat__n_components": [4, 6, 8],
+            "clf__C": [0.5, 1.0, 2.0],
+            "clf__gamma": ["scale", 0.1, 0.01],
+        }
+        gs = GridSearchCV(
+            estimator,
+            param_grid=param_grid,
+            scoring="accuracy",
+            cv=inner_cv,
+            n_jobs=-1,
+            refit=True,
+        )
+        gs.fit(X_train, y_train)
+        estimator = clone(gs.best_estimator_)
+
+    if calibrate != "none" and model_name in {"SVM", "RF"}:
+        cal = CalibratedClassifierCV(estimator, method=calibrate, cv=calibration_cv)
+        cal.fit(X_train, y_train)
+        return cal
+
+    estimator.fit(X_train, y_train)
+    return estimator
+
+def oof_predict_proba(
+    *,
+    X: np.ndarray,
+    y: np.ndarray,
+    models: Dict[str, Pipeline],
+    n_splits: int,
+    random_state: int,
+    tune: str,
+    tune_cv: int,
+    calibrate: str,
+    calibration_cv: int,
+) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     classes = np.unique(y)
     n_classes = len(classes)
@@ -176,8 +250,18 @@ def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline],
         X_train, y_train = X[train_idx], y[train_idx]
         X_test = X[test_idx]
         for name, model in models.items():
-            model.fit(X_train, y_train)
-            p = model.predict_proba(X_test)
+            fitted = _fit_for_fold(
+                model_name=name,
+                base_model=model,
+                X_train=X_train,
+                y_train=y_train,
+                tune=tune,
+                tune_cv=tune_cv,
+                random_state=random_state,
+                calibrate=calibrate,
+                calibration_cv=calibration_cv,
+            )
+            p = fitted.predict_proba(X_test)
             if p.shape[1] != n_classes:
                 raise RuntimeError(f"{name} predict_proba returned {p.shape[1]} classes; expected {n_classes}")
             proba[name][test_idx] = p
@@ -186,6 +270,30 @@ def oof_predict_proba(X: np.ndarray, y: np.ndarray, models: Dict[str, Pipeline],
         if np.isnan(p).any():
             raise RuntimeError(f"OOF probabilities not fully populated for {name}")
     return proba, classes
+
+def oof_stacking_proba(
+    *,
+    proba: Dict[str, np.ndarray],
+    y: np.ndarray,
+    model_order: Sequence[str],
+    n_splits: int,
+    random_state: int,
+) -> np.ndarray:
+    X_meta = np.hstack([proba[name] for name in model_order])
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    classes = np.unique(y)
+    n_classes = int(classes.size)
+    meta = np.full((len(y), n_classes), np.nan, dtype=float)
+    for train_idx, test_idx in skf.split(X_meta, y):
+        X_tr, y_tr = X_meta[train_idx], y[train_idx]
+        X_te = X_meta[test_idx]
+        # Some scikit-learn versions removed/changed `multi_class`; keep it version-agnostic.
+        lr = LogisticRegression(max_iter=1000, solver="lbfgs")
+        lr.fit(X_tr, y_tr)
+        meta[test_idx] = lr.predict_proba(X_te)
+    if np.isnan(meta).any():
+        raise RuntimeError("OOF stacking probabilities not fully populated")
+    return meta
 
 def ensemble_proba(proba: Dict[str, np.ndarray], weights: Dict[str, float]) -> np.ndarray:
     model_names = list(proba.keys())
@@ -266,6 +374,43 @@ def main():
         default="baseline_subject",
     )
     parser.add_argument(
+        "--features",
+        choices=["csp", "fbcsp"],
+        default="csp",
+        help="Feature extractor: csp (default) or fbcsp (filter-bank CSP).",
+    )
+    parser.add_argument("--n-components", type=int, default=4, help="CSP/FBCSP components per band (default: 4).")
+    parser.add_argument(
+        "--bands",
+        type=str,
+        default="8-12,12-16,16-20,20-30",
+        help="FBCSP sub-bands as 'lo-hi' pairs, comma-separated (default: 8-12,12-16,16-20,20-30).",
+    )
+    parser.add_argument(
+        "--sfreq",
+        type=float,
+        default=250.0,
+        help="Sampling frequency (Hz) for FBCSP bandpass filters (default: 250).",
+    )
+    parser.add_argument(
+        "--include-bandpower",
+        action="store_true",
+        help="When --features fbcsp, also concatenate per-channel bandpower features per band.",
+    )
+    parser.add_argument(
+        "--tune",
+        choices=["none", "small"],
+        default="none",
+        help="Per-subject tuning (nested CV): small tunes SVM (feat__n_components, C, gamma).",
+    )
+    parser.add_argument("--tune-cv", type=int, default=3, help="Inner CV folds for --tune small (default: 3).")
+    parser.add_argument(
+        "--ensemble-method",
+        choices=["softvote", "stacking"],
+        default="softvote",
+        help="Ensembling method: softvote (weighted soft voting) or stacking (logreg on base probabilities).",
+    )
+    parser.add_argument(
         "--calibrate",
         choices=["none", "sigmoid", "isotonic"],
         default="sigmoid",
@@ -291,13 +436,26 @@ def main():
         model_list = ["LDA", "SVM", "RF"]
     else:
         model_list = _parse_models(args.models)
-    all_models = build_models(random_state=args.random_state)
+    bands = _parse_bands_arg(args.bands)
+    all_models = build_models(
+        random_state=args.random_state,
+        features=args.features,
+        n_components=int(args.n_components),
+        sfreq=float(args.sfreq),
+        bands=bands,
+        include_bandpower=bool(args.include_bandpower),
+    )
     models = {name: all_models[name] for name in model_list}
-    models = maybe_calibrate_models(models, method=args.calibrate, cv=args.calibration_cv)
 
     run_suffix = args.run_name.strip()
     if not run_suffix:
-        run_suffix = f"models-{'_'.join(model_list)}__weights-{args.weights}__cal-{args.calibrate}"
+        run_suffix = (
+            f"models-{'_'.join(model_list)}__weights-{args.weights}"
+            f"__feat-{args.features}"
+            f"__ens-{args.ensemble_method}"
+            f"__tune-{args.tune}"
+            f"__cal-{args.calibrate}"
+        )
     out_dir = args.out_dir / run_suffix
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -316,6 +474,14 @@ def main():
         "preset": args.preset,
         "models": model_list,
         "weights": args.weights,
+        "features": args.features,
+        "n_components": int(args.n_components),
+        "bands": bands,
+        "sfreq": float(args.sfreq),
+        "include_bandpower": bool(args.include_bandpower),
+        "tune": args.tune,
+        "tune_cv": int(args.tune_cv),
+        "ensemble_method": args.ensemble_method,
         "calibrate": args.calibrate,
         "calibration_cv": args.calibration_cv,
         "threshold": args.threshold,
@@ -344,22 +510,37 @@ def main():
             models=models,
             n_splits=args.n_splits,
             random_state=args.random_state,
+            tune=args.tune,
+            tune_cv=args.tune_cv,
+            calibrate=args.calibrate,
+            calibration_cv=args.calibration_cv,
         )
 
-        if args.weights == "equal":
-            weights = {name: 1.0 for name in models.keys()}
-        elif args.weights == "baseline_global":
-            if global_w is None:
-                raise SystemExit(f"Missing baseline file for global weights: {BASELINE_RESULTS_CSV}")
-            weights = global_w
+        if args.ensemble_method == "stacking":
+            weights = {}
+            p_ens = oof_stacking_proba(
+                proba=proba,
+                y=y,
+                model_order=model_list,
+                n_splits=args.n_splits,
+                random_state=args.random_state,
+            )
         else:
-            w = baseline_subject_weights(subject_id)
-            if w is None:
-                raise SystemExit(f"Missing baseline file/subject for weights: {BASELINE_RESULTS_CSV} subject={subject_id}")
-            weights = w
-        weights = _normalize_weights(weights, models.keys())
-
-        p_ens = ensemble_proba(proba, weights)
+            if args.weights == "equal":
+                weights = {name: 1.0 for name in models.keys()}
+            elif args.weights == "baseline_global":
+                if global_w is None:
+                    raise SystemExit(f"Missing baseline file for global weights: {BASELINE_RESULTS_CSV}")
+                weights = global_w
+            else:
+                w = baseline_subject_weights(subject_id)
+                if w is None:
+                    raise SystemExit(
+                        f"Missing baseline file/subject for weights: {BASELINE_RESULTS_CSV} subject={subject_id}"
+                    )
+                weights = w
+            weights = _normalize_weights(weights, models.keys())
+            p_ens = ensemble_proba(proba, weights)
         pred_all = p_ens.argmax(axis=1)
         max_prob = p_ens.max(axis=1)
 
