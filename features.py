@@ -25,6 +25,17 @@ except ModuleNotFoundError:
 
 from fbcsp import FBCSPFeatures
 
+try:
+    from tqdm.auto import tqdm  # type: ignore
+
+    _tqdm_write = tqdm.write
+except ModuleNotFoundError:  # pragma: no cover
+    def tqdm(it=None, **_kwargs):  # type: ignore
+        return it if it is not None else []
+
+    def _tqdm_write(msg: str) -> None:  # type: ignore
+        print(msg)
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "analysis_results"
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -129,7 +140,8 @@ def evaluate_subject(
 
     for name, model in models.items():
         scores: List[float] = []
-        for train_idx, test_idx in skf.split(X, y):
+        splits = list(skf.split(X, y))
+        for train_idx, test_idx in tqdm(splits, total=n_splits, desc=f"{name} CV", leave=False):
             X_train, y_train = X[train_idx], y[train_idx]
             X_test, y_test = X[test_idx], y[test_idx]
 
@@ -209,14 +221,14 @@ def main():
     )
 
     all_results = []
-    for x_path, y_path in pairs:
+    for x_path, y_path in tqdm(pairs, total=len(pairs), desc="Subjects", unit="subj"):
         subject_id = subject_key(x_path)
-        print(f"Evaluating Subject {subject_id}...")
+        _tqdm_write(f"[features] Evaluating Subject {subject_id}...")
 
         X, y = load_subject(x_path, y_path)
         class_counts = dict(zip(*np.unique(y, return_counts=True)))
 
-        print(f"X shape: {X.shape} | y shape: {y.shape} | class distribution: {class_counts}")
+        _tqdm_write(f"[features] X shape: {X.shape} | y shape: {y.shape} | class distribution: {class_counts}")
 
         try:
             results = evaluate_subject(

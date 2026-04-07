@@ -36,6 +36,17 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.svm import SVC
 
 try:
+    from tqdm.auto import tqdm  # type: ignore
+
+    _tqdm_write = tqdm.write
+except ModuleNotFoundError:  # pragma: no cover
+    def tqdm(it=None, **_kwargs):  # type: ignore
+        return it if it is not None else []
+
+    def _tqdm_write(msg: str) -> None:  # type: ignore
+        print(msg)
+
+try:
     from mne.decoding import CSP  # type: ignore
 except ModuleNotFoundError:
     from csp import CSP
@@ -246,7 +257,8 @@ def oof_predict_proba(
     n_classes = len(classes)
     proba = {name: np.full((len(y), n_classes), np.nan, dtype=float) for name in models}
 
-    for train_idx, test_idx in skf.split(X, y):
+    splits = list(skf.split(X, y))
+    for train_idx, test_idx in tqdm(splits, total=n_splits, desc="OOF CV folds", leave=False):
         X_train, y_train = X[train_idx], y[train_idx]
         X_test = X[test_idx]
         for name, model in models.items():
@@ -499,9 +511,10 @@ def main():
         if {"subject", "best_acc"}.issubset(baseline_df.columns):
             baseline_best_acc_by_subject = baseline_df.set_index("subject")["best_acc"]
 
-    for x_path, y_path in pairs:
+    for x_path, y_path in tqdm(pairs, total=len(pairs), desc="Subjects", unit="subj"):
         subject_id = int(subject_key(x_path))
-        print(f"[ensemble_v2] Subject {subject_id}: {x_path.name} / {y_path.name}")
+        # Keep prints minimal; tqdm provides the primary progress UI.
+        _tqdm_write(f"[ensemble_v2] Subject {subject_id}: {x_path.name} / {y_path.name}")
         X, y = load_subject(x_path, y_path)
 
         proba, classes = oof_predict_proba(

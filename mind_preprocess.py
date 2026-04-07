@@ -3,6 +3,12 @@ import numpy as np
 import os
 from config import *
 
+try:
+    from tqdm.auto import tqdm  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    def tqdm(it=None, **_kwargs):  # type: ignore
+        return it if it is not None else []
+
 def _save_channel_selection_visual(raw_before, raw_after, subject: str):
     """
     Save a simple visual report showing channel-type counts and kept EEG channel names.
@@ -133,7 +139,7 @@ def preprocess_subject(subject):
 
 if __name__ == '__main__':
     os.makedirs(OUTPUT_PATH, exist_ok=True)
-    for subject in SUBJECTS_TRAIN:
+    for subject in tqdm(SUBJECTS_TRAIN, desc="Preprocessing (2a)", unit="subj"):
         try:
             preprocess_subject(subject)
         except Exception as e:

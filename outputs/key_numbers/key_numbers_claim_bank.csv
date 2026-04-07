@@ -1,5 +1,5 @@
 Claim,Supported?,Metric that proves it
-"At threshold 0.6, some ensemble outperformed Best-Single on confident trials (mean)",Yes,LDA_SVM_RF_global_grid mean_diff=0.159549
+"At threshold 0.6, some ensemble outperformed Best-Single on confident trials (mean)",Yes,LDA_SVM_RF_global_grid mean_diff=0.162948
 "At threshold 0.6, confident accuracy beats Best-Single while maintaining >=0.4 coverage",No,"LDA_SVM_RF_global_grid mean_conf=0.791070, mean_cov=0.381676"
 System shows agreement beyond chance,Missing,Cohen's kappa
 System is fast enough for practical use,Missing,Latency

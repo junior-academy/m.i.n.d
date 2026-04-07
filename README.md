@@ -233,6 +233,52 @@ python3 m.i.n.d/visualizer_pygame.py
 
 If you have the sibling app folder `mind-dashboard/` (Next.js), see `mind-dashboard/README.md` for local run + Vercel deploy steps.
 
+## External validation (BCI Competition III — Dataset IIIa)
+
+If you have the IIIa `.gdf` files in:
+- `m.i.n.d/data/BCICIV_3a_gdf/` (e.g., `k3b.gdf`, `k6b.gdf`, `l1b.gdf`)
+
+You can preprocess them into a separate folder and run the same baselines/ensemble stack as a **secondary validation**.
+
+### 1) Preprocess IIIa
+
+```bash
+python3 m.i.n.d/mind_preprocess_3a.py
+```
+
+This writes:
+- `m.i.n.d/analysis_results_3a/X_k3b.npy` (etc.)
+- `m.i.n.d/analysis_results_3a/y_k3b.npy` (etc.)
+
+### 2) Baselines on IIIa (separate outputs)
+
+```bash
+python3 m.i.n.d/features.py \
+  --data-dir m.i.n.d/analysis_results_3a \
+  --out-dir m.i.n.d/outputs/validation_3a/baselines \
+  --features fbcsp \
+  --include-bandpower
+```
+
+### 3) Main ensemble on IIIa (separate outputs)
+
+```bash
+THR_GRID="$(python3 - <<'PY'
+print(",".join(f"{i/20:.2f}" for i in range(11, 21)))  # 0.55..1.00 step 0.05
+PY
+)"
+
+python3 m.i.n.d/ensemble_v2.py \
+  --data-dir m.i.n.d/analysis_results_3a \
+  --out-dir m.i.n.d/outputs/validation_3a/ensemble_v2 \
+  --preset main \
+  --features fbcsp \
+  --include-bandpower \
+  --calibrate sigmoid \
+  --threshold 0.60 \
+  --threshold-grid "$THR_GRID"
+```
+
 ## Cleaning old outputs
 
 To reduce clutter without deleting data:

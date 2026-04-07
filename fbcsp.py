@@ -86,6 +86,21 @@ class FBCSPFeatures(BaseEstimator, TransformerMixin):
     _csp_per_band: Optional[List[object]] = None
     _n_channels: Optional[int] = None
 
+    def _make_csp(self):
+        """
+        Create a CSP instance with numerically-stable defaults.
+
+        We prefer covariance regularization when using MNE's CSP to avoid
+        NaNs/Infs from ill-conditioned covariance estimates (common in EEG).
+        Falls back gracefully for the local CSP implementation.
+        """
+        CSP = _get_csp_class()
+        # MNE supports string regs like "ledoit_wolf"; local fallback may not.
+        try:
+            return CSP(n_components=self.n_components, reg="ledoit_wolf", log=True, norm_trace=False)
+        except TypeError:
+            return CSP(n_components=self.n_components, reg=None, log=True, norm_trace=False)
+
     def fit(self, X: np.ndarray, y: np.ndarray):
         X = _as_3d(X)
         y = np.asarray(y)
@@ -96,14 +111,15 @@ class FBCSPFeatures(BaseEstimator, TransformerMixin):
         self._sos = [_bandpass_sos(self.sfreq, lo, hi, order=self.filter_order) for lo, hi in self._bands]
         self._n_channels = int(X.shape[1])
 
-        CSP = _get_csp_class()
         self._csp_per_band = []
         for _ in self._bands:
-            # Keep consistent with rest of repo
-            self._csp_per_band.append(CSP(n_components=self.n_components, reg=None, log=True, norm_trace=False))
+            self._csp_per_band.append(self._make_csp())
 
         for i, sos in enumerate(self._sos):
             X_f = _apply_sosfiltfilt(X, sos)
+            if not np.isfinite(X_f).all():
+                # Filtering should not introduce NaNs, but we guard to keep long runs from crashing.
+                X_f = np.nan_to_num(X_f, nan=0.0, posinf=0.0, neginf=0.0)
             self._csp_per_band[i].fit(X_f, y)
 
         return self
@@ -130,4 +146,3 @@ class FBCSPFeatures(BaseEstimator, TransformerMixin):
                 feats.append(np.asarray(bp, dtype=float))
 
         return np.concatenate(feats, axis=1)
-
