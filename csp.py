@@ -1,8 +1,6 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Optional
-
 import numpy as np
 from scipy import linalg
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -13,7 +11,6 @@ def _as_3d(X: np.ndarray) -> np.ndarray:
     if X.ndim != 3:
         raise ValueError(f"Expected X with shape (n_trials, n_channels, n_times); got {X.shape}")
     return X
-
 
 def _trial_cov(trial: np.ndarray, reg: Optional[float]) -> np.ndarray:
     # trial: (n_channels, n_times)
@@ -26,7 +23,6 @@ def _trial_cov(trial: np.ndarray, reg: Optional[float]) -> np.ndarray:
         cov = cov + (float(reg) * np.eye(cov.shape[0], dtype=cov.dtype))
     return cov
 
-
 def _mean_cov(X: np.ndarray, reg: Optional[float]) -> np.ndarray:
     covs = [_trial_cov(trial, reg=None) for trial in X]
     cov = np.mean(covs, axis=0)
@@ -34,7 +30,6 @@ def _mean_cov(X: np.ndarray, reg: Optional[float]) -> np.ndarray:
     if reg is not None and reg != 0:
         cov = cov + (float(reg) * np.eye(cov.shape[0], dtype=cov.dtype))
     return cov
-
 
 @dataclass
 class CSP(BaseEstimator, TransformerMixin):
@@ -51,7 +46,6 @@ class CSP(BaseEstimator, TransformerMixin):
     log: bool = True
     # Accepted for compatibility with `mne.decoding.CSP`; ignored here.
     norm_trace: bool = False
-
     filters_: Optional[np.ndarray] = None  # shape: (n_components, n_channels)
 
     def fit(self, X: np.ndarray, y: np.ndarray):

@@ -1,17 +1,13 @@
 from __future__ import annotations
-
 import argparse
 from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
 ENS_DIR = OUTPUTS_DIR / "ensemble_v2"
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -34,7 +30,6 @@ def main() -> None:
     base_df = base_df[["subject", "best_acc"]].copy()
     base_df["subject"] = pd.to_numeric(base_df["subject"], errors="raise").astype(int)
     base_df["best_acc"] = pd.to_numeric(base_df["best_acc"], errors="raise")
-
     grid_paths = sorted(ENS_DIR.glob("*_grid.csv"))
     if not grid_paths:
         raise SystemExit(f"No *_grid.csv found in {ENS_DIR}. Run ensemble_v2 and/or plot_ensembles first.")
@@ -51,7 +46,6 @@ def main() -> None:
         df["threshold"] = pd.to_numeric(df["threshold"], errors="raise")
         df["ensemble_acc_confident"] = pd.to_numeric(df["ensemble_acc_confident"], errors="coerce")
         df["ensemble_coverage"] = pd.to_numeric(df["ensemble_coverage"], errors="raise")
-
         ens_name = df["ensemble_name"].iloc[0] if "ensemble_name" in df.columns else p.stem
 
         for thr, sub in df.groupby("threshold"):
@@ -59,7 +53,6 @@ def main() -> None:
             b = sub["best_acc"].to_numpy(dtype=float)
             mask = ~(np.isnan(a) | np.isnan(b))
             a2, b2 = a[mask], b[mask]
-
             n = int(a2.size)
             mean_cov = float(sub["ensemble_coverage"].mean())
             mean_conf = float(np.nanmean(a))
@@ -96,7 +89,5 @@ def main() -> None:
     out_df.to_csv(args.out, index=False)
     print(f"Wrote {args.out}")
 
-
 if __name__ == "__main__":
     main()
-

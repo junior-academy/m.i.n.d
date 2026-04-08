@@ -8,13 +8,13 @@ from pathlib import Path
 # ICA components:
 ICA_N_COMPONENTS = 20
 
-# File paths
+# file paths
 BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = str(BASE_DIR / "data" / "BCICIV_2a_gdf")
 OUTPUT_PATH = str(BASE_DIR / "analysis_results")
 PLOTS_PATH = str(Path(OUTPUT_PATH) / "plots")
 
-# Dataset parameters
+# dataset params
 SUBJECTS_TRAIN = ['A01T', 'A02T', 'A03T', 'A04T', 'A05T', 'A06T', 'A07T', 'A08T', 'A09T']
 SUBJECTS_TEST = ['A01E', 'A02E', 'A03E', 'A04E', 'A05E', 'A06E', 'A07E', 'A08E', 'A09E']
 

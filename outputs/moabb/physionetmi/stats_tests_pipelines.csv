@@ -1,0 +1,2 @@
+pipeline_a,pipeline_b,n_subjects_used,mean_a,mean_b,mean_diff_a_minus_b,paired_t_stat,paired_t_pvalue,levene_stat,levene_pvalue,paired_cohens_d
+CSP+LDA,CSP+SVM,10,0.6222222222222221,0.5888888888888888,0.03333333333333332,1.8605210188381263,0.09573390947125943,0.07200000000000063,0.7914977392082994,0.5883484054145519

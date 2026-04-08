@@ -4,10 +4,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
-import pygame
 import numpy as np
 import pandas as pd
-
+import pygame
 
 def _require_pygame():
     try:
@@ -184,6 +183,100 @@ def _metric_safe_mean(x: np.ndarray) -> float:
 def _parse_csv_list(arg: str) -> List[str]:
     return [p.strip() for p in arg.split(",") if p.strip()]
 
+def _text_height(font) -> int:
+    # pygame doesn't expose a stable "line height" in older versions; get_linesize is best.
+    h = getattr(font, "get_linesize", None)
+    return int(h()) if callable(h) else int(font.get_height())
+
+def _draw_text(
+    pygame,
+    surf,
+    *,
+    font,
+    text: str,
+    rect,
+    color: Tuple[int, int, int] = TEXT,
+    align: str = "left",
+    valign: str = "top",
+    pad: int = 0,
+    ellipsize: bool = True,
+    clip: bool = True,
+) -> None:
+    """Draw single-line text inside rect; never overflows (ellipsis + clip)."""
+    if rect.width <= 0 or rect.height <= 0:
+        return
+    max_w = max(0, rect.width - 2 * pad)
+    s = _fit_text(font, text, max_w) if ellipsize else text
+    img = font.render(s, True, color)
+    x = rect.x + pad
+    if align == "center":
+        x = rect.x + (rect.width - img.get_width()) // 2
+    elif align == "right":
+        x = rect.right - pad - img.get_width()
+
+    y = rect.y + pad
+    if valign == "middle":
+        y = rect.y + (rect.height - img.get_height()) // 2
+    elif valign == "bottom":
+        y = rect.bottom - pad - img.get_height()
+
+    if clip:
+        prev = surf.get_clip()
+        surf.set_clip(rect)
+        surf.blit(img, (x, y))
+        surf.set_clip(prev)
+    else:
+        surf.blit(img, (x, y))
+
+def _wrap_lines(font, text: str, max_w: int) -> List[str]:
+    words = str(text).split()
+    if not words:
+        return [""]
+    out: List[str] = []
+    cur = words[0]
+    for w in words[1:]:
+        cand = cur + " " + w
+        if font.size(cand)[0] <= max_w:
+            cur = cand
+        else:
+            out.append(cur)
+            cur = w
+    out.append(cur)
+    return out
+
+def _draw_paragraph(
+    pygame,
+    surf,
+    *,
+    font,
+    text: str,
+    rect,
+    color: Tuple[int, int, int] = TEXT_DIM,
+    pad: int = 0,
+    line_gap: int = 2,
+    max_lines: Optional[int] = None,
+) -> None:
+    """Draw wrapped text; clipped to rect."""
+    if rect.width <= 0 or rect.height <= 0:
+        return
+    max_w = max(0, rect.width - 2 * pad)
+    lines = _wrap_lines(font, text, max_w)
+    if max_lines is not None:
+        lines = lines[:max_lines]
+
+    prev = surf.get_clip()
+    surf.set_clip(rect)
+    lh = _text_height(font) + line_gap
+    x = rect.x + pad
+    y = rect.y + pad
+    for i, line in enumerate(lines):
+        if y + lh > rect.bottom:
+            break
+        img = font.render(_fit_text(font, line, max_w), True, color)
+        surf.blit(img, (x, y))
+        y += lh
+    surf.set_clip(prev)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Simple UI widgets (pure pygame)
@@ -199,8 +292,15 @@ class Tabs:
         self.pygame = pygame
         self.rect = rect
         self.labels = [str(l) for l in labels]
+        self.short_labels = {
+            "OVERVIEW": "OVR",
+            "CONTROLS": "CTRL",
+            "DATA": "DATA",
+            "LOGS": "LOGS",
+        }
         self.active = self.labels[0] if self.labels else ""
         self.tabs: List[Tab] = []
+        self._use_short = False
         self._layout(font=None, start_x=self.rect.x + 220, end_x=self.rect.right - 200)
 
     def _layout(self, *, font, start_x: int, end_x: int) -> None:
@@ -213,6 +313,9 @@ class Tabs:
         avail = max(0, int(end_x) - int(start_x))
         gap = 10
         if not self.labels:
+            return
+        if avail < 80:
+            # Not enough space: hide tabs rather than overlapping other navbar content.
             return
         n = len(self.labels)
         w = (avail - gap * (n - 1)) // n if n else 0
@@ -235,15 +338,22 @@ class Tabs:
             pad_x = 16
             gap = 8
             for t in self.tabs:
-                text_w = font.size(f"[{t.label}]")[0]
+                lab = self.short_labels.get(t.label, t.label) if self._use_short else t.label
+                text_w = font.size(f"[{lab}]")[0]
                 tw = int(_clamp(text_w + pad_x * 2, 90, 180))
                 t.rect = self.pygame.Rect(x, y, tw, h)
                 x += tw + gap
             if x - gap > end_x:
-                # fallback to equal widths if text-based layout overflows
-                self._layout(font=None, start_x=start_x, end_x=end_x)
+                # Try shortening labels first.
+                if not self._use_short:
+                    self._use_short = True
+                    self._layout(font=font, start_x=start_x, end_x=end_x)
+                else:
+                    # fallback to equal widths if still overflowing
+                    self._layout(font=None, start_x=start_x, end_x=end_x)
 
     def layout(self, *, font, start_x: int, end_x: int) -> None:
+        self._use_short = False
         self._layout(font=font, start_x=start_x, end_x=end_x)
 
     def handle_click(self, pos: Tuple[int, int]) -> bool:
@@ -259,8 +369,18 @@ class Tabs:
             fill = PANEL_2 if is_active else PANEL
             border = MAGENTA if is_active else CYAN
             _rounded_panel(self.pygame, surf, t.rect, fill=fill, border=border, border_alpha=150, radius=6)
-            text = font.render(f"[{t.label}]", True, MAGENTA if is_active else TEXT_DIM)
-            surf.blit(text, (t.rect.x + 16, t.rect.y + 8))
+            lab = self.short_labels.get(t.label, t.label) if self._use_short else t.label
+            _draw_text(
+                self.pygame,
+                surf,
+                font=font,
+                text=f"[{lab}]",
+                rect=t.rect,
+                color=(MAGENTA if is_active else TEXT_DIM),
+                align="center",
+                valign="middle",
+                pad=8,
+            )
 
 
 class MiniButton:
@@ -392,25 +512,48 @@ def _draw_model_cards(
         _rounded_panel(pygame, surf, card, fill=PANEL, border=border, border_alpha=border_a, radius=10)
         name = col.replace("_pred", "").upper()
         title = name + ("  ★ BEST" if is_best else "")
-        title = _fit_text(font_s, title, card.width - 38)
-        surf.blit(font_s.render(title, True, MAGENTA if is_best else TEXT_DIM), (card.x + 12, card.y + 10))
+        title = _fit_text(font_s, title, card.width - 24)
+        _draw_text(
+            pygame,
+            surf,
+            font=font_s,
+            text=title,
+            rect=pygame.Rect(card.x + 10, card.y + 8, card.width - 20, _text_height(font_s) + 2),
+            color=(MAGENTA if is_best else TEXT_DIM),
+            align="left",
+            valign="top",
+            pad=0,
+        )
 
         cur_pred = _safe_int(df.iloc[trial].get(col, np.nan))
         cur_true = _safe_int(df.iloc[trial].get("y_true", np.nan))
         correct = (cur_pred is not None) and (cur_true is not None) and (cur_pred == cur_true)
         c = GREEN if correct else (RED if (cur_pred is not None and cur_true is not None) else TEXT_DIM)
 
-        pred_txt = _fit_text(font, label(cur_pred), card.width - 24)
-        surf.blit(font.render(pred_txt, True, c), (card.x + 12, card.y + 34))
-        if cur_true is not None:
-            true_txt = _fit_text(font_s, f"true: {label(cur_true)}", card.width - 24)
-            surf.blit(font_s.render(true_txt, True, TEXT_DIM), (card.x + 12, card.y + 60))
+        pad = 10
+        y = card.y + 8 + _text_height(font_s) + 10
+
+        pred_txt = _fit_text(font, label(cur_pred), card.width - 2 * pad)
+        pred_rect = pygame.Rect(card.x + pad, y, card.width - 2 * pad, _text_height(font) + 2)
+        _draw_text(pygame, surf, font=font, text=pred_txt, rect=pred_rect, color=c, pad=0)
+        y += _text_height(font) + 8
+
+        # Only show true label if we have room.
+        true_line = f"true: {label(cur_true)}" if cur_true is not None else "true: NA"
+        true_h = _text_height(font_s) + 2
+        acc_h = _text_height(font_s) + 2
+        remaining = card.bottom - pad - y
+        show_true = remaining >= (true_h + acc_h + 6)
+
+        if show_true:
+            true_rect = pygame.Rect(card.x + pad, y, card.width - 2 * pad, true_h)
+            _draw_text(pygame, surf, font=font_s, text=_fit_text(font_s, true_line, true_rect.width), rect=true_rect, color=TEXT_DIM)
+            y += true_h + 6
 
         acc = acc_by_col.get(col, float("nan"))
-        surf.blit(
-            font_s.render(f"acc so far: {acc:.3f}" if np.isfinite(acc) else "acc so far: NA", True, TEXT_DIM),
-            (card.x + 12, card.y + 86),
-        )
+        acc_line = f"acc so far: {acc:.3f}" if np.isfinite(acc) else "acc so far: NA"
+        acc_rect = pygame.Rect(card.x + pad, y, card.width - 2 * pad, acc_h)
+        _draw_text(pygame, surf, font=font_s, text=_fit_text(font_s, acc_line, acc_rect.width), rect=acc_rect, color=TEXT_DIM)
 
         # Small correctness light
         light = pygame.Rect(card.right - 22, card.y + 14, 10, 10)
@@ -588,18 +731,17 @@ def main() -> None:
         status = "● RUNNING" if playing else "■ PAUSED"
         status_color = GREEN if playing else RED
         st_img = font.render(status, True, status_color)
-        status_left = W - st_img.get_width() - PAD
+        status_w = st_img.get_width()
+        status_rect = pygame.Rect(W - PAD - status_w - 18, 10, status_w + 18, NAV_H - 20)
 
-        def ellipsize(text: str, max_w: int) -> str:
-            return _fit_text(font, text, max_w)
-
-        title_text = ellipsize(
-            f"M.I.N.D / DECODER_UI  |  patient=S{patients[menu_patient_idx]:02d}",
-            max(120, status_left - PAD - 24),
-        )
+        title_rect = pygame.Rect(PAD, 0, max(100, status_rect.x - PAD - 20), NAV_H)
+        title_text = _fit_text(font, f"M.I.N.D / DECODER_UI  |  patient=S{patients[menu_patient_idx]:02d}", title_rect.width - 6)
         title_img = font.render(title_text, True, CYAN)
-        title_right = PAD + title_img.get_width()
-        tabs.layout(font=font_s, start_x=title_right + 32, end_x=status_left - 18)
+
+        # Tabs get the remaining width, and will auto-short labels as needed.
+        tabs_start = title_rect.x + title_img.get_width() + 24
+        tabs_end = status_rect.x - 12
+        tabs.layout(font=font_s, start_x=tabs_start, end_x=tabs_end)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -687,29 +829,97 @@ def main() -> None:
         if mode == MODE_MENU:
             menu = pygame.Rect(220, 150, 840, 470)
             _rounded_panel(pygame, screen, menu, fill=PANEL, border=CYAN, border_alpha=140, radius=14)
-            screen.blit(font_b.render("M.I.N.D VISUALIZER", True, CYAN), (menu.x + 24, menu.y + 22))
-            screen.blit(font.render("Choose patient + run-set (ENTER).", True, TEXT_DIM), (menu.x + 24, menu.y + 60))
+            _draw_text(
+                pygame,
+                screen,
+                font=font_b,
+                text="M.I.N.D VISUALIZER",
+                rect=pygame.Rect(menu.x + 24, menu.y + 16, menu.width - 48, 36),
+                color=CYAN,
+                pad=0,
+            )
+            _draw_text(
+                pygame,
+                screen,
+                font=font,
+                text="Choose patient + run-set (ENTER).",
+                rect=pygame.Rect(menu.x + 24, menu.y + 58, menu.width - 48, 24),
+                color=TEXT_DIM,
+                pad=0,
+            )
 
-            screen.blit(font.render("Patient:", True, MAGENTA), (menu.x + 24, menu.y + 120))
-            screen.blit(font.render(f"S{patients[menu_patient_idx]:02d}", True, TEXT), (menu.x + 180, menu.y + 120))
-            screen.blit(font_s.render("UP/DOWN", True, TEXT_DIM), (menu.x + 260, menu.y + 124))
+            row_y = menu.y + 118
+            _draw_text(
+                pygame,
+                screen,
+                font=font,
+                text="Patient:",
+                rect=pygame.Rect(menu.x + 24, row_y, 140, 26),
+                color=MAGENTA,
+            )
+            _draw_text(
+                pygame,
+                screen,
+                font=font,
+                text=f"S{patients[menu_patient_idx]:02d}",
+                rect=pygame.Rect(menu.x + 180, row_y, 90, 26),
+                color=TEXT,
+            )
+            _draw_text(
+                pygame,
+                screen,
+                font=font_s,
+                text="UP/DOWN",
+                rect=pygame.Rect(menu.x + 280, row_y + 2, menu.width - 320, 22),
+                color=TEXT_DIM,
+            )
 
-            screen.blit(font.render("Run set:", True, MAGENTA), (menu.x + 24, menu.y + 160))
+            row_y = menu.y + 158
+            _draw_text(pygame, screen, font=font, text="Run set:", rect=pygame.Rect(menu.x + 24, row_y, 140, 26), color=MAGENTA)
             label_rs = run_set_labels[menu_run_set_idx]
-            screen.blit(font.render(label_rs, True, TEXT), (menu.x + 180, menu.y + 160))
-            screen.blit(font_s.render("LEFT/RIGHT", True, TEXT_DIM), (menu.x + 24, menu.y + 190))
+            _draw_text(
+                pygame,
+                screen,
+                font=font,
+                text=label_rs,
+                rect=pygame.Rect(menu.x + 180, row_y, menu.width - 220, 26),
+                color=TEXT,
+            )
+            _draw_text(
+                pygame,
+                screen,
+                font=font_s,
+                text="LEFT/RIGHT",
+                rect=pygame.Rect(menu.x + 24, row_y + 32, menu.width - 48, 22),
+                color=TEXT_DIM,
+            )
 
-            screen.blit(font.render("Threshold:", True, MAGENTA), (menu.x + 24, menu.y + 232))
-            screen.blit(font.render(f"{threshold:.2f}", True, TEXT), (menu.x + 180, menu.y + 232))
-            screen.blit(font_s.render("[ / ]", True, TEXT_DIM), (menu.x + 260, menu.y + 236))
+            row_y = menu.y + 230
+            _draw_text(pygame, screen, font=font, text="Threshold:", rect=pygame.Rect(menu.x + 24, row_y, 140, 26), color=MAGENTA)
+            _draw_text(pygame, screen, font=font, text=f"{threshold:.2f}", rect=pygame.Rect(menu.x + 180, row_y, 90, 26), color=TEXT)
+            _draw_text(pygame, screen, font=font_s, text="[ / ]", rect=pygame.Rect(menu.x + 280, row_y + 2, menu.width - 320, 22), color=TEXT_DIM)
 
-            screen.blit(font.render("Included runs:", True, MAGENTA), (menu.x + 24, menu.y + 280))
+            _draw_text(pygame, screen, font=font, text="Included runs:", rect=pygame.Rect(menu.x + 24, menu.y + 278, menu.width - 48, 26), color=MAGENTA)
             y = menu.y + 312
             for p in run_sets[label_rs]:
-                screen.blit(font_s.render(f"- {p.name}", True, TEXT_DIM), (menu.x + 24, y))
+                _draw_text(
+                    pygame,
+                    screen,
+                    font=font_s,
+                    text=f"- {p.name}",
+                    rect=pygame.Rect(menu.x + 24, y, menu.width - 48, 22),
+                    color=TEXT_DIM,
+                )
                 y += 22
 
-            screen.blit(font_s.render("ENTER start  |  ESC quit", True, TEXT_DIM), (menu.x + 24, menu.bottom - 34))
+            _draw_text(
+                pygame,
+                screen,
+                font=font_s,
+                text="ENTER start  |  ESC quit",
+                rect=pygame.Rect(menu.x + 24, menu.bottom - 40, menu.width - 48, 24),
+                color=TEXT_DIM,
+            )
             screen.blit(scan, (0, 0))
             pygame.display.flip()
             clock.tick(fps_target)
@@ -746,17 +956,19 @@ def main() -> None:
 
         # NAV
         _rounded_panel(pygame, screen, nav_rect, fill=BG, border=CYAN, border_alpha=110, radius=0)
-        screen.blit(title_img, (PAD, 18))
+        screen.blit(title_img, (PAD, (NAV_H - title_img.get_height()) // 2))
         tabs.draw(screen, font_s)
-        screen.blit(st_img, (W - st_img.get_width() - PAD, 18))
+        # status badge rect (clip-protected)
+        _rounded_panel(pygame, screen, status_rect, fill=PANEL, border=CYAN, border_alpha=120, radius=8)
+        _draw_text(pygame, screen, font=font, text=status, rect=status_rect, color=status_color, align="center", valign="middle", pad=6)
 
         # LEFT
         _rounded_panel(pygame, screen, left_rect, fill=PANEL, border=CYAN, border_alpha=90, radius=0)
-        screen.blit(font.render("PARAMETERS", True, MAGENTA), (left_rect.x + PAD, left_rect.y + PAD))
-        screen.blit(font_s.render(f"Run: {run.name}", True, TEXT_DIM), (left_rect.x + PAD, left_rect.y + 44))
-        screen.blit(font_s.render(f"Patient: S{patients[menu_patient_idx]:02d}", True, TEXT_DIM), (left_rect.x + PAD, left_rect.y + 64))
-        screen.blit(font_s.render(f"Trial speed: {speed:.2f}x", True, TEXT_DIM), (left_rect.x + PAD, left_rect.y + 84))
-        screen.blit(font_s.render(f"Threshold: {threshold:.2f}", True, TEXT_DIM), (left_rect.x + PAD, left_rect.y + 104))
+        _draw_text(pygame, screen, font=font, text="PARAMETERS", rect=pygame.Rect(left_rect.x + PAD, left_rect.y + PAD, left_rect.width - 2 * PAD, 24), color=MAGENTA)
+        _draw_text(pygame, screen, font=font_s, text=f"Run: {run.name}", rect=pygame.Rect(left_rect.x + PAD, left_rect.y + 44, left_rect.width - 2 * PAD, 20), color=TEXT_DIM)
+        _draw_text(pygame, screen, font=font_s, text=f"Patient: S{patients[menu_patient_idx]:02d}", rect=pygame.Rect(left_rect.x + PAD, left_rect.y + 64, left_rect.width - 2 * PAD, 20), color=TEXT_DIM)
+        _draw_text(pygame, screen, font=font_s, text=f"Trial speed: {speed:.2f}x", rect=pygame.Rect(left_rect.x + PAD, left_rect.y + 84, left_rect.width - 2 * PAD, 20), color=TEXT_DIM)
+        _draw_text(pygame, screen, font=font_s, text=f"Threshold: {threshold:.2f}", rect=pygame.Rect(left_rect.x + PAD, left_rect.y + 104, left_rect.width - 2 * PAD, 20), color=TEXT_DIM)
 
         btn_play.draw(screen, font_s, active=playing)
         btn_prev.draw(screen, font_s)
@@ -765,7 +977,14 @@ def main() -> None:
         btn_thr_up.draw(screen, font_s)
         btn_run_next.draw(screen, font_s)
         btn_reload.draw(screen, font_s)
-        screen.blit(font_s.render("Keys: [ ] thr | -/+ speed | TAB next run | M menu | ESC quit", True, TEXT_DIM), (left_rect.x + PAD, left_rect.bottom - 30))
+        _draw_text(
+            pygame,
+            screen,
+            font=font_s,
+            text="Keys: [ ] thr | -/+ speed | TAB next run | M menu | ESC quit",
+            rect=pygame.Rect(left_rect.x + PAD, left_rect.bottom - 34, left_rect.width - 2 * PAD, 22),
+            color=TEXT_DIM,
+        )
 
         # MAIN
         _rounded_panel(pygame, screen, main_rect, fill=PANEL, border=CYAN, border_alpha=90, radius=0)
@@ -773,15 +992,33 @@ def main() -> None:
         _rounded_panel(pygame, screen, chart_rect, fill=PANEL_2, border=CYAN, border_alpha=120, radius=8)
         _rounded_panel(pygame, screen, probs_rect, fill=PANEL_2, border=CYAN, border_alpha=120, radius=8)
 
-        screen.blit(font_b.render("[ DECODER SNAPSHOT ]", True, CYAN), (info_rect.x + 14, info_rect.y + 14))
+        header_rect = pygame.Rect(info_rect.x + 14, info_rect.y + 12, info_rect.width - 28, 34)
+        _draw_text(pygame, screen, font=font_b, text="[ DECODER SNAPSHOT ]", rect=header_rect, color=CYAN)
         status2 = "FIRE" if fired else "HOLD (NULL)"
-        screen.blit(font_b.render(status2, True, GREEN if fired else YELLOW), (info_rect.right - 200, info_rect.y + 14))
-        screen.blit(font.render(f"y_true: {label(y_true)}", True, TEXT), (info_rect.x + 14, info_rect.y + 62))
-        screen.blit(font.render(f"ens_pred: {label(y_pred)}", True, TEXT), (info_rect.x + 14, info_rect.y + 90))
-        screen.blit(font.render(f"max_prob: {max_prob:.3f}", True, TEXT), (info_rect.x + 14, info_rect.y + 118))
-        screen.blit(font.render(f"coverage: {coverage:.3f}", True, TEXT_DIM), (info_rect.x + 320, info_rect.y + 62))
-        screen.blit(font.render(f"conf_acc: {acc_conf:.3f}" if np.isfinite(acc_conf) else "conf_acc: NA", True, TEXT_DIM), (info_rect.x + 320, info_rect.y + 90))
-        screen.blit(font.render(f"all_acc: {acc_all:.3f}" if np.isfinite(acc_all) else "all_acc: NA", True, TEXT_DIM), (info_rect.x + 320, info_rect.y + 118))
+        _draw_text(
+            pygame,
+            screen,
+            font=font_b,
+            text=status2,
+            rect=header_rect,
+            color=(GREEN if fired else YELLOW),
+            align="right",
+            pad=0,
+        )
+
+        # Two-column stats that auto-fit within info_rect.
+        left_col = pygame.Rect(info_rect.x + 14, info_rect.y + 56, (info_rect.width - 28) // 2, 90)
+        right_col = pygame.Rect(left_col.right + 14, left_col.y, (info_rect.width - 28) - left_col.width - 14, 90)
+        line_h = _text_height(font) + 4
+        for i, txt in enumerate([f"y_true: {label(y_true)}", f"ens_pred: {label(y_pred)}", f"max_prob: {max_prob:.3f}"]):
+            _draw_text(pygame, screen, font=font, text=txt, rect=pygame.Rect(left_col.x, left_col.y + i * line_h, left_col.width, line_h), color=TEXT)
+        r_lines = [
+            f"coverage: {coverage:.3f}",
+            (f"conf_acc: {acc_conf:.3f}" if np.isfinite(acc_conf) else "conf_acc: NA"),
+            (f"all_acc: {acc_all:.3f}" if np.isfinite(acc_all) else "all_acc: NA"),
+        ]
+        for i, txt in enumerate(r_lines):
+            _draw_text(pygame, screen, font=font, text=txt, rect=pygame.Rect(right_col.x, right_col.y + i * line_h, right_col.width, line_h), color=TEXT_DIM)
 
         bar = pygame.Rect(info_rect.x + 14, info_rect.y + 160, info_rect.width - 28, 18)
         _draw_bar(pygame, screen, bar, 0.0 if not np.isfinite(max_prob) else float(max_prob), fg=CYAN)
@@ -793,11 +1030,18 @@ def main() -> None:
         hist = df.iloc[start : trial + 1]
         ys = hist["ensemble_max_prob"].to_numpy(dtype=float)
         ys = [float(v) if np.isfinite(v) else 0.0 for v in ys.tolist()]
-        screen.blit(font.render("Max prob history", True, TEXT_DIM), (chart_rect.x + 14, chart_rect.y + 14))
+        _draw_text(pygame, screen, font=font, text="Max prob history", rect=pygame.Rect(chart_rect.x + 14, chart_rect.y + 12, chart_rect.width - 28, 24), color=TEXT_DIM)
         plot = pygame.Rect(chart_rect.x + 14, chart_rect.y + 44, chart_rect.width - 28, chart_rect.height - 60)
         _draw_line_chart(pygame, screen, plot, ys, threshold=threshold)
 
-        screen.blit(font.render("Ensemble class probabilities", True, TEXT_DIM), (probs_rect.x + 14, probs_rect.y + 14))
+        _draw_text(
+            pygame,
+            screen,
+            font=font,
+            text="Ensemble class probabilities",
+            rect=pygame.Rect(probs_rect.x + 14, probs_rect.y + 12, probs_rect.width - 28, 24),
+            color=TEXT_DIM,
+        )
         y0 = probs_rect.y + 48
         max_show = min(len(run.prob_cols), 6)
         for i in range(max_show):
@@ -807,10 +1051,25 @@ def main() -> None:
             name = _fit_text(font_s, label(cls_i), 150)
             c = _color_for_class(cls_i)
             is_top = cls_i == pred_cls
-            screen.blit(font_s.render(name, True, c if is_top else TEXT_DIM), (probs_rect.x + 14, y0 + i * 42))
-            r = pygame.Rect(probs_rect.x + 180, y0 + i * 42 + 6, probs_rect.width - 240, 16)
+            _draw_text(
+                pygame,
+                screen,
+                font=font_s,
+                text=name,
+                rect=pygame.Rect(probs_rect.x + 14, y0 + i * 42, 160, 20),
+                color=(c if is_top else TEXT_DIM),
+            )
+            r = pygame.Rect(probs_rect.x + 188, y0 + i * 42 + 6, probs_rect.width - 280, 16)
             _draw_bar(pygame, screen, r, p, fg=c)
-            screen.blit(font_s.render(f"{p:.3f}", True, TEXT), (r.right + 10, r.y - 2))
+            _draw_text(
+                pygame,
+                screen,
+                font=font_s,
+                text=f"{p:.3f}",
+                rect=pygame.Rect(r.right + 8, r.y - 2, probs_rect.right - (r.right + 16), 20),
+                color=TEXT,
+                align="right",
+            )
 
         _rounded_panel(pygame, screen, right_rect, fill=PANEL, border=CYAN, border_alpha=90, radius=0)
         gesture = label(pred_cls).upper()
@@ -819,28 +1078,35 @@ def main() -> None:
         model_pred_cols = [c for c in df.columns if c.endswith("_pred") and c != "ensemble_pred"]
 
         if tabs.active == "LOGS":
-            screen.blit(font.render("[ LOGS ]", True, CYAN), (stats_rect.x + 14, stats_rect.y + 14))
+            _draw_text(pygame, screen, font=font, text="[ LOGS ]", rect=pygame.Rect(stats_rect.x + 14, stats_rect.y + 12, stats_rect.width - 28, 24), color=CYAN)
             lines = log_lines[-18:]
             y = stats_rect.y + 48
             for ln in lines:
-                screen.blit(font_s.render(_fit_text(font_s, ln, stats_rect.width - 28), True, TEXT_DIM), (stats_rect.x + 14, y))
+                _draw_text(
+                    pygame,
+                    screen,
+                    font=font_s,
+                    text=ln,
+                    rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 20),
+                    color=TEXT_DIM,
+                )
                 y += 20
         else:
             title = "[ DATA ]" if tabs.active == "DATA" else "[ OVERVIEW ]"
-            screen.blit(font.render(title, True, CYAN), (stats_rect.x + 14, stats_rect.y + 14))
+            _draw_text(pygame, screen, font=font, text=title, rect=pygame.Rect(stats_rect.x + 14, stats_rect.y + 12, stats_rect.width - 28, 24), color=CYAN)
             cards_rect = pygame.Rect(stats_rect.x + 10, stats_rect.y + 44, stats_rect.width - 20, 220)
             _draw_model_cards(pygame, screen, cards_rect, df=df, trial=trial, class_names=class_names, model_pred_cols=model_pred_cols)
             y = cards_rect.bottom + 12
             if tabs.active == "DATA":
-                screen.blit(font.render(f"trial: {trial+1}/{len(df)}", True, TEXT_DIM), (stats_rect.x + 14, y))
+                _draw_text(pygame, screen, font=font, text=f"trial: {trial+1}/{len(df)}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
                 y += 24
-                screen.blit(font.render(f"threshold: {threshold:.2f}", True, TEXT_DIM), (stats_rect.x + 14, y))
+                _draw_text(pygame, screen, font=font, text=f"threshold: {threshold:.2f}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
                 y += 24
-                screen.blit(font.render(f"coverage (so far): {coverage:.3f}", True, TEXT_DIM), (stats_rect.x + 14, y))
+                _draw_text(pygame, screen, font=font, text=f"coverage (so far): {coverage:.3f}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
             else:
-                screen.blit(font.render("Ensemble gate: HOLD when unsure.", True, TEXT_DIM), (stats_rect.x + 14, y))
+                _draw_text(pygame, screen, font=font, text="Ensemble gate: HOLD when unsure.", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
                 y += 24
-                screen.blit(font.render("Adjust threshold live (accuracy vs coverage).", True, TEXT_DIM), (stats_rect.x + 14, y))
+                _draw_text(pygame, screen, font=font, text="Adjust threshold live (accuracy vs coverage).", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
 
         screen.blit(scan, (0, 0))
         pygame.display.flip()

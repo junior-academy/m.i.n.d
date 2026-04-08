@@ -6,10 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
-
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
-
 
 def find_cleanup_targets() -> List[Tuple[Path, Path]]:
     """
@@ -47,7 +45,6 @@ def find_cleanup_targets() -> List[Tuple[Path, Path]]:
 
     return moves
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Move legacy/old outputs into archive folders (no deletion).")
     parser.add_argument("--apply", action="store_true", help="Actually move files (default is dry-run).")
@@ -72,7 +69,5 @@ def main() -> None:
 
     print("\nDone.")
 
-
 if __name__ == "__main__":
     main()
-
