@@ -3,7 +3,44 @@ import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from scipy import stats
+
+def _paired_cohens_d(diffs: np.ndarray) -> float:
+    diffs = np.asarray(diffs, dtype=float)
+    diffs = diffs[np.isfinite(diffs)]
+    if diffs.size < 2:
+        return float("nan")
+    sd = float(diffs.std(ddof=1))
+    if sd == 0.0:
+        return float("nan")
+    return float(diffs.mean() / sd)
+
+
+def _t_ci_mean(values: np.ndarray, alpha: float = 0.05) -> tuple[float, float]:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    n = int(values.size)
+    if n == 0:
+        return float("nan"), float("nan")
+    mean = float(values.mean())
+    if n < 2:
+        return mean, mean
+    sd = float(values.std(ddof=1))
+    sem = sd / (n**0.5)
+    try:
+        from scipy import stats  # type: ignore
+
+        tcrit = float(stats.t.ppf(1 - alpha / 2, df=n - 1))
+    except Exception:
+        tcrit_table = {
+            1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262, 10: 2.228,
+            11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086,
+            21: 2.080, 22: 2.074, 23: 2.069, 24: 2.064, 25: 2.060, 26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045, 30: 2.042,
+        }
+        tcrit = float(tcrit_table.get(n - 1, 1.96))
+
+    half = float(tcrit * sem)
+    return mean - half, mean + half
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -85,13 +122,22 @@ def main() -> None:
         a2, b2 = a[mask], b[mask]
 
         n = int(a2.size)
+        diffs = a2 - b2
         if n >= 2:
-            t = stats.ttest_rel(a2, b2)
-            lev = stats.levene(a2, b2, center="median")
-            t_stat, t_p = float(t.statistic), float(t.pvalue)
-            lev_stat, lev_p = float(lev.statistic), float(lev.pvalue)
+            try:
+                from scipy import stats  # type: ignore
+
+                t = stats.ttest_rel(a2, b2)
+                lev = stats.levene(a2, b2, center="median")
+                t_stat, t_p = float(t.statistic), float(t.pvalue)
+                lev_stat, lev_p = float(lev.statistic), float(lev.pvalue)
+            except Exception:
+                t_stat = t_p = lev_stat = lev_p = float("nan")
         else:
             t_stat = t_p = lev_stat = lev_p = float("nan")
+
+        d = _paired_cohens_d(diffs)
+        ci_low, ci_high = _t_ci_mean(diffs, alpha=0.05)
 
         rows.append(
             {
@@ -103,6 +149,9 @@ def main() -> None:
                 "mean_ens_conf_acc": float(np.nanmean(a)),
                 "mean_best_single_acc": float(np.nanmean(b)),
                 "mean_diff_conf_minus_best": float(np.nanmean(a - b)),
+                "diff_ci_low_95": float(ci_low),
+                "diff_ci_high_95": float(ci_high),
+                "paired_cohens_d": float(d),
                 "paired_t_stat": t_stat,
                 "paired_t_pvalue": t_p,
                 "levene_stat": lev_stat,

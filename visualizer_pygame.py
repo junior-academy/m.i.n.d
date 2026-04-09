@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import pygame
 
+from gating import DebounceConfig, debounced_gate, toggle_rate, wrong_fire_rate_all
+
 def _require_pygame():
     try:
         import pygame 
@@ -403,7 +405,7 @@ class MiniButton:
 # ──────────────────────────────────────────────────────────────────────────────
 # Prosthetic hand (visual mock)
 # ──────────────────────────────────────────────────────────────────────────────
-def _draw_hand(pygame, surf, rect, *, gesture: str, fired: bool) -> None:
+def _draw_hand(pygame, surf, rect, *, gesture: str, fired: bool, title: str = "HAND OUTPUT") -> None:
     # gesture in {"LEFT","RIGHT","FEET","TONGUE","NULL"} (or any string)
     _rounded_panel(pygame, surf, rect, fill=PANEL, border=CYAN, border_alpha=110, radius=8)
 
@@ -442,8 +444,51 @@ def _draw_hand(pygame, surf, rect, *, gesture: str, fired: bool) -> None:
 
     # label
     font = _mono_font(pygame, 16)
-    label = f"[HAND OUTPUT]  {('FIRE' if fired else 'HOLD')}  {gesture}"
+    label = f"[{title}]  {('FIRE' if fired else 'HOLD')}  {gesture}"
     surf.blit(font.render(label, True, CYAN if fired else TEXT_DIM), (rect.x + 14, rect.y + 12))
+
+
+def _safe_int_series(s: pd.Series) -> np.ndarray:
+    out = pd.to_numeric(s, errors="coerce").to_numpy()
+    out = np.where(np.isfinite(out), out, -1).astype(int)
+    return out
+
+
+def _compute_gate_arrays(
+    *,
+    df: pd.DataFrame,
+    prob_cols: Sequence[str],
+    threshold: float,
+    off_gap: float,
+    k: int,
+    n: int,
+) -> Dict[str, np.ndarray]:
+    p_ens = df[list(prob_cols)].to_numpy(dtype=float)
+    y_hat = p_ens.argmax(axis=1).astype(int)
+
+    # Raw threshold gate (no hysteresis, no latch).
+    p_max = p_ens.max(axis=1)
+    fired_raw = np.isfinite(p_max) & (p_max >= float(threshold))
+    pred_raw = np.where(fired_raw, y_hat, -1).astype(int)
+
+    # Debounced gate (hysteresis + k-of-n + latch).
+    cfg = DebounceConfig(
+        t_on=float(threshold),
+        t_off=float(max(0.0, float(threshold) - float(off_gap))),
+        k=int(k),
+        n=int(n),
+    )
+    fired_deb, pred_deb = debounced_gate(p_ens=p_ens, y_hat=y_hat, cfg=cfg)
+
+    return {
+        "y_hat": y_hat,
+        "p_max": p_max,
+        "fired_raw": fired_raw.astype(bool),
+        "pred_raw": pred_raw.astype(int),
+        "fired_deb": fired_deb.astype(bool),
+        "pred_deb": pred_deb.astype(int),
+    }
+
 
 def _draw_model_cards(
     pygame,
@@ -698,6 +743,13 @@ def main() -> None:
     trial = 0
     last_advance = time.time()
 
+    # Debounced gate config (stability controller)
+    DEB_OFF_GAP = 0.05
+    DEB_K = 3
+    DEB_N = 5
+    gate_cache_key: Optional[Tuple[str, int, float]] = None
+    gate_cache: Optional[Dict[str, np.ndarray]] = None
+
     runs: List[RunData] = []
     run_idx = 0
     run: Optional[RunData] = None
@@ -930,24 +982,70 @@ def main() -> None:
         row = df.iloc[trial]
         y_true = _safe_int(row.get("y_true", np.nan))
         y_pred = _safe_int(row.get("ensemble_pred", np.nan))
-        max_prob = _safe_float(row.get("ensemble_max_prob", np.nan))
-        max_prob = float(max_prob) if max_prob is not None else float("nan")
-        fired = bool(np.isfinite(max_prob) and max_prob >= threshold)
+
+        # Gate arrays (raw vs debounced) computed from full-sequence probabilities.
+        gkey = (run.name, int(run.subject), float(threshold))
+        if gate_cache_key != gkey or gate_cache is None:
+            gate_cache_key = gkey
+            gate_cache = _compute_gate_arrays(
+                df=df,
+                prob_cols=run.prob_cols,
+                threshold=float(threshold),
+                off_gap=float(DEB_OFF_GAP),
+                k=int(DEB_K),
+                n=int(DEB_N),
+            )
+
+        assert gate_cache is not None
+        p_max_all = gate_cache["p_max"]
+        fired_raw_all = gate_cache["fired_raw"]
+        pred_raw_all = gate_cache["pred_raw"]
+        fired_deb_all = gate_cache["fired_deb"]
+        pred_deb_all = gate_cache["pred_deb"]
+
+        max_prob = float(p_max_all[trial]) if trial < len(p_max_all) else float("nan")
+        fired_raw = bool(fired_raw_all[trial])
+        fired_deb = bool(fired_deb_all[trial])
+
         probs = row[run.prob_cols].to_numpy(dtype=float)
         pred_cls = int(np.nanargmax(probs)) if np.isfinite(probs).any() else (y_pred if y_pred is not None else 0)
 
-        upto = df.iloc[: trial + 1]
-        maxp = upto["ensemble_max_prob"].to_numpy(dtype=float)
-        fired_mask = np.isfinite(maxp) & (maxp >= threshold)
-        coverage = float(fired_mask.mean()) if len(upto) else 0.0
-        y_true_all = upto["y_true"].to_numpy(dtype=float)
-        y_pred_all = upto["ensemble_pred"].to_numpy(dtype=float)
-        acc_all = _metric_safe_mean((y_true_all == y_pred_all).astype(float)) if np.isfinite(y_true_all).any() else float("nan")
-        acc_conf = (
-            _metric_safe_mean((y_true_all[fired_mask] == y_pred_all[fired_mask]).astype(float))
-            if fired_mask.any() and np.isfinite(y_true_all).any()
-            else float("nan")
-        )
+        upto_idx = slice(0, trial + 1)
+        y_true_full = _safe_int_series(df["y_true"]) if "y_true" in df.columns else np.full((len(df),), -1, dtype=int)
+        known = y_true_full[upto_idx] != -1
+
+        # All-trials argmax accuracy (no gate).
+        y_hat_full = gate_cache["y_hat"]
+        acc_all = float(np.mean((y_hat_full[upto_idx][known] == y_true_full[upto_idx][known]))) if known.any() else float("nan")
+
+        def _conf_acc(pred: np.ndarray, fired: np.ndarray) -> float:
+            fm = fired[upto_idx] & known
+            if not np.any(fm):
+                return float("nan")
+            return float(np.mean(pred[upto_idx][fm] == y_true_full[upto_idx][fm]))
+
+        cov_raw = float(np.mean(fired_raw_all[upto_idx])) if trial >= 0 else 0.0
+        cov_deb = float(np.mean(fired_deb_all[upto_idx])) if trial >= 0 else 0.0
+        acc_conf_raw = _conf_acc(pred_raw_all, fired_raw_all)
+        acc_conf_deb = _conf_acc(pred_deb_all, fired_deb_all)
+
+        togg_raw = toggle_rate(fired_raw_all[upto_idx])
+        togg_deb = toggle_rate(fired_deb_all[upto_idx])
+        # Wrong-fire safety proxy: wrong & fired as fraction of attempts (all trials with known y_true).
+        if known.any():
+            wrong_fire_raw = wrong_fire_rate_all(
+                y_true=y_true_full[upto_idx][known],
+                y_pred=pred_raw_all[upto_idx][known],
+                fired=fired_raw_all[upto_idx][known],
+            )
+            wrong_fire_deb = wrong_fire_rate_all(
+                y_true=y_true_full[upto_idx][known],
+                y_pred=pred_deb_all[upto_idx][known],
+                fired=fired_deb_all[upto_idx][known],
+            )
+        else:
+            wrong_fire_raw = float("nan")
+            wrong_fire_deb = float("nan")
 
         def label(idx: Optional[int]) -> str:
             if idx is None:
@@ -994,27 +1092,43 @@ def main() -> None:
 
         header_rect = pygame.Rect(info_rect.x + 14, info_rect.y + 12, info_rect.width - 28, 34)
         _draw_text(pygame, screen, font=font_b, text="[ DECODER SNAPSHOT ]", rect=header_rect, color=CYAN)
-        status2 = "FIRE" if fired else "HOLD (NULL)"
+        # Show raw vs debounced status as two right-aligned badges.
+        badge_w = 220
+        badge_h = 30
+        b2 = pygame.Rect(header_rect.right - badge_w, header_rect.y + 2, badge_w, badge_h)
+        b1 = pygame.Rect(b2.x - 12 - badge_w, b2.y, badge_w, badge_h)
         _draw_text(
             pygame,
             screen,
-            font=font_b,
-            text=status2,
-            rect=header_rect,
-            color=(GREEN if fired else YELLOW),
+            font=font,
+            text=f"RAW: {'FIRE' if fired_raw else 'HOLD'}",
+            rect=b1,
+            color=(GREEN if fired_raw else YELLOW),
             align="right",
-            pad=0,
+            valign="middle",
+        )
+        _draw_text(
+            pygame,
+            screen,
+            font=font,
+            text=f"STABLE: {'FIRE' if fired_deb else 'HOLD'}",
+            rect=b2,
+            color=(GREEN if fired_deb else YELLOW),
+            align="right",
+            valign="middle",
         )
 
         # Two-column stats that auto-fit within info_rect.
         left_col = pygame.Rect(info_rect.x + 14, info_rect.y + 56, (info_rect.width - 28) // 2, 90)
         right_col = pygame.Rect(left_col.right + 14, left_col.y, (info_rect.width - 28) - left_col.width - 14, 90)
         line_h = _text_height(font) + 4
-        for i, txt in enumerate([f"y_true: {label(y_true)}", f"ens_pred: {label(y_pred)}", f"max_prob: {max_prob:.3f}"]):
+        raw_pred_now = _safe_int(pred_raw_all[trial]) if fired_raw else None
+        deb_pred_now = _safe_int(pred_deb_all[trial]) if fired_deb else None
+        for i, txt in enumerate([f"y_true: {label(y_true)}", f"raw_out: {label(raw_pred_now)}", f"stable_out: {label(deb_pred_now)}"]):
             _draw_text(pygame, screen, font=font, text=txt, rect=pygame.Rect(left_col.x, left_col.y + i * line_h, left_col.width, line_h), color=TEXT)
         r_lines = [
-            f"coverage: {coverage:.3f}",
-            (f"conf_acc: {acc_conf:.3f}" if np.isfinite(acc_conf) else "conf_acc: NA"),
+            f"raw cov: {cov_raw:.3f} | stable cov: {cov_deb:.3f}",
+            (f"raw conf: {acc_conf_raw:.3f} | stable conf: {acc_conf_deb:.3f}" if (np.isfinite(acc_conf_raw) or np.isfinite(acc_conf_deb)) else "conf_acc: NA"),
             (f"all_acc: {acc_all:.3f}" if np.isfinite(acc_all) else "all_acc: NA"),
         ]
         for i, txt in enumerate(r_lines):
@@ -1072,8 +1186,16 @@ def main() -> None:
             )
 
         _rounded_panel(pygame, screen, right_rect, fill=PANEL, border=CYAN, border_alpha=90, radius=0)
-        gesture = label(pred_cls).upper()
-        _draw_hand(pygame, screen, hand_rect, gesture=gesture, fired=fired)
+        # Split prosthetic mock into raw vs stable panels.
+        hand_gap = 12
+        hand_h = (hand_rect.height - hand_gap) // 2
+        hand_raw_rect = pygame.Rect(hand_rect.x, hand_rect.y, hand_rect.width, hand_h)
+        hand_deb_rect = pygame.Rect(hand_rect.x, hand_rect.y + hand_h + hand_gap, hand_rect.width, hand_h)
+
+        raw_gesture = label(raw_pred_now).upper() if fired_raw else "NULL"
+        deb_gesture = label(deb_pred_now).upper() if fired_deb else "NULL"
+        _draw_hand(pygame, screen, hand_raw_rect, gesture=raw_gesture, fired=fired_raw, title="RAW GATE")
+        _draw_hand(pygame, screen, hand_deb_rect, gesture=deb_gesture, fired=fired_deb, title=f"STABLE GATE  k={DEB_K}/{DEB_N}")
         _rounded_panel(pygame, screen, stats_rect, fill=PANEL_2, border=CYAN, border_alpha=120, radius=8)
         model_pred_cols = [c for c in df.columns if c.endswith("_pred") and c != "ensemble_pred"]
 
@@ -1102,11 +1224,26 @@ def main() -> None:
                 y += 24
                 _draw_text(pygame, screen, font=font, text=f"threshold: {threshold:.2f}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
                 y += 24
-                _draw_text(pygame, screen, font=font, text=f"coverage (so far): {coverage:.3f}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
+                _draw_text(pygame, screen, font=font, text=f"raw coverage: {cov_raw:.3f}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
+                y += 22
+                _draw_text(pygame, screen, font=font, text=f"stable coverage: {cov_deb:.3f}", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
+                y += 22
+                _draw_text(pygame, screen, font=font, text=f"raw toggle rate: {togg_raw:.3f}" if np.isfinite(togg_raw) else "raw toggle rate: NA", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
+                y += 22
+                _draw_text(pygame, screen, font=font, text=f"stable toggle rate: {togg_deb:.3f}" if np.isfinite(togg_deb) else "stable toggle rate: NA", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
             else:
-                _draw_text(pygame, screen, font=font, text="Ensemble gate: HOLD when unsure.", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
+                _draw_text(pygame, screen, font=font, text="RAW vs STABLE gate (hysteresis + k-of-n).", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
                 y += 24
                 _draw_text(pygame, screen, font=font, text="Adjust threshold live (accuracy vs coverage).", rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22), color=TEXT_DIM)
+                y += 22
+                _draw_text(
+                    pygame,
+                    screen,
+                    font=font,
+                    text=f"wrong-fire (raw/stable): {wrong_fire_raw:.3f}/{wrong_fire_deb:.3f}" if (np.isfinite(wrong_fire_raw) or np.isfinite(wrong_fire_deb)) else "wrong-fire: NA",
+                    rect=pygame.Rect(stats_rect.x + 14, y, stats_rect.width - 28, 22),
+                    color=TEXT_DIM,
+                )
 
         screen.blit(scan, (0, 0))
         pygame.display.flip()
