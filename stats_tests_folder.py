@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from stats_utils import levene_two_groups, paired_ttest_rel
 
 
 def _paired_cohens_d(diffs: np.ndarray) -> float:
@@ -12,10 +13,13 @@ def _paired_cohens_d(diffs: np.ndarray) -> float:
     diffs = diffs[np.isfinite(diffs)]
     if diffs.size < 2:
         return float("nan")
+    mean = float(diffs.mean())
     sd = float(diffs.std(ddof=1))
     if sd == 0.0:
-        return float("nan")
-    return float(diffs.mean() / sd)
+        if mean == 0.0:
+            return 0.0
+        return float("inf") if mean > 0 else float("-inf")
+    return float(mean / sd)
 
 
 def _t_ci_mean(values: np.ndarray, alpha: float = 0.05) -> tuple[float, float]:
@@ -140,7 +144,10 @@ def main() -> None:
                     t_stat, t_p = float(t.statistic), float(t.pvalue)
                     lev_stat, lev_p = float(lev.statistic), float(lev.pvalue)
                 except Exception:
-                    t_stat = t_p = lev_stat = lev_p = float("nan")
+                    t = paired_ttest_rel(a2, b2)
+                    lev = levene_two_groups(a2, b2)
+                    t_stat, t_p = float(t.statistic), float(t.pvalue)
+                    lev_stat, lev_p = float(lev.statistic), float(lev.pvalue)
             else:
                 t_stat = t_p = lev_stat = lev_p = float("nan")
 
@@ -175,4 +182,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

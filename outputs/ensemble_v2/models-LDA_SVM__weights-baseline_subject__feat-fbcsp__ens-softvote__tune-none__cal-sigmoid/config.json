@@ -35,7 +35,6 @@
   "sfreq": 250.0,
   "threshold": 0.6,
   "threshold_grid": [
-    0.0,
     0.55,
     0.6,
     0.65,

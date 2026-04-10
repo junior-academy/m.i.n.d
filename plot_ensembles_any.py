@@ -71,7 +71,13 @@ def load_grids(grid_dir: Path) -> pd.DataFrame:
         missing = required - set(df.columns)
         if missing:
             raise SystemExit(f"{p} missing columns: {sorted(missing)}")
-        df = df[list(required)].copy()
+        # Keep optional stability-controller columns if present (for *_debounced_grid.csv).
+        optional = []
+        for c in ["toggle_rate", "wrong_fire_rate_all"]:
+            if c in df.columns:
+                optional.append(c)
+        keep = list(required) + optional
+        df = df[keep].copy()
         df["ensemble_name"] = p.stem.replace("_grid", "")
         frames.append(df)
     out = pd.concat(frames, ignore_index=True)
@@ -80,8 +86,77 @@ def load_grids(grid_dir: Path) -> pd.DataFrame:
     out["ensemble_acc_all"] = pd.to_numeric(out["ensemble_acc_all"], errors="raise")
     out["ensemble_acc_confident"] = pd.to_numeric(out["ensemble_acc_confident"], errors="coerce")
     out["ensemble_coverage"] = pd.to_numeric(out["ensemble_coverage"], errors="raise")
+    if "toggle_rate" in out.columns:
+        out["toggle_rate"] = pd.to_numeric(out["toggle_rate"], errors="coerce")
+    if "wrong_fire_rate_all" in out.columns:
+        out["wrong_fire_rate_all"] = pd.to_numeric(out["wrong_fire_rate_all"], errors="coerce")
     out["ensemble_name"] = out["ensemble_name"].astype(str)
     return out
+
+
+def maybe_write_stability_plots(ens_df: pd.DataFrame, out_dir: Path) -> None:
+    """
+    If stability-controller columns exist (toggle_rate, wrong_fire_rate_all) we create additional plots.
+
+    Expected source: *_debounced_grid.csv files produced by make_debounced_grids.py, which include:
+    - toggle_rate
+    - wrong_fire_rate_all
+    """
+    required = {"toggle_rate", "wrong_fire_rate_all"}
+    if not required.issubset(set(ens_df.columns)):
+        return
+
+    configure_matplotlib_style()
+    import matplotlib.pyplot as plt
+
+    df = ens_df.copy()
+    df["toggle_rate"] = pd.to_numeric(df["toggle_rate"], errors="coerce")
+    df["wrong_fire_rate_all"] = pd.to_numeric(df["wrong_fire_rate_all"], errors="coerce")
+    df["safe_fire"] = df["ensemble_coverage"] - df["wrong_fire_rate_all"]
+
+    agg = (
+        df.groupby(["ensemble_name", "threshold"])
+        .agg(
+            mean_toggle=("toggle_rate", "mean"),
+            mean_wrong_fire=("wrong_fire_rate_all", "mean"),
+            mean_safe_fire=("safe_fire", "mean"),
+            mean_cov=("ensemble_coverage", "mean"),
+        )
+        .reset_index()
+    )
+
+    # 8) Toggle rate vs threshold
+    fig, ax = plt.subplots()
+    for name, sub in agg.groupby("ensemble_name"):
+        ax.plot(sub["threshold"], sub["mean_toggle"], marker="o", label=name)
+    ax.set_xlabel("Threshold (t_on)")
+    ax.set_ylabel("Mean toggle rate")
+    ax.set_title("Stability (Debounced): Toggle Rate vs Threshold")
+    ax.legend()
+    _save_fig(fig, out_dir / "stability_toggle_rate_vs_threshold.png")
+    plt.close(fig)
+
+    # 9) Wrong-fire vs threshold
+    fig, ax = plt.subplots()
+    for name, sub in agg.groupby("ensemble_name"):
+        ax.plot(sub["threshold"], sub["mean_wrong_fire"], marker="o", label=name)
+    ax.set_xlabel("Threshold (t_on)")
+    ax.set_ylabel("Mean wrong-fire rate (all trials)")
+    ax.set_title("Safety (Debounced): Wrong-Fire vs Threshold")
+    ax.legend()
+    _save_fig(fig, out_dir / "stability_wrong_fire_vs_threshold.png")
+    plt.close(fig)
+
+    # 10) Safe-fire vs threshold
+    fig, ax = plt.subplots()
+    for name, sub in agg.groupby("ensemble_name"):
+        ax.plot(sub["threshold"], sub["mean_safe_fire"], marker="o", label=name)
+    ax.set_xlabel("Threshold (t_on)")
+    ax.set_ylabel("Mean safe-fire (coverage − wrong-fire)")
+    ax.set_title("Usefulness (Debounced): Safe-Fire vs Threshold")
+    ax.legend()
+    _save_fig(fig, out_dir / "stability_safe_fire_vs_threshold.png")
+    plt.close(fig)
 
 
 def load_stats_tests(path: Path) -> pd.DataFrame:
@@ -226,9 +301,11 @@ def main() -> None:
     _save_fig(fig, out_dir / "ensemble_coverage_vs_threshold.png")
     plt.close(fig)
 
+    # Optional: stability-controller plots (debounced gate)
+    maybe_write_stability_plots(ens_df=ens_df, out_dir=out_dir)
+
     print(f"Wrote visuals to {out_dir}")
 
 
 if __name__ == "__main__":
     main()
-

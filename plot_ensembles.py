@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -74,65 +74,79 @@ def load_baseline_summary(path: Path) -> Tuple[pd.DataFrame, Dict[str, float], f
 def load_ensemble_grids() -> pd.DataFrame:
     ensemble_v2_dir = BASE_DIR / "outputs" / "ensemble_v2"
 
+    def _latest_dir(root: Path, glob_pat: str) -> Optional[Path]:
+        cands = [p for p in root.glob(glob_pat) if p.is_dir()]
+        if not cands:
+            return None
+        cands.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return cands[0]
+
     def _load_grid_with_fallback(
         grid_path: Path,
-        fallback_threshold_metrics_path: Path,
+        fallback_run_glob: str,
         ensemble_name: str,
     ) -> pd.DataFrame:
         """
-        Prefer the explicit *_grid.csv files described in the prompt.
-        Fall back to ensemble_v2 per-run `threshold_metrics.csv` if the grid file doesn't exist.
-        If fallback is used, write the grid CSV to the expected location for next time.
+        Prefer the newest per-run `threshold_metrics.csv` under outputs/ensemble_v2/models-*.
+
+        Why: grid files are "stable filenames" for the dashboard, but it is easy for them to become stale
+        if you rerun experiments (new models-* folder) with a different threshold grid. Using the newest
+        run's `threshold_metrics.csv` ensures the stable *_grid.csv files always reflect the latest run.
+
+        If no run folder exists, fall back to reading the existing stable *_grid.csv.
         """
-        if grid_path.exists():
-            df = pd.read_csv(grid_path)
-            df["ensemble_name"] = ensemble_name
-            return df
+        run_dir = _latest_dir(ensemble_v2_dir, fallback_run_glob)
+        if run_dir is not None:
+            tm = run_dir / "threshold_metrics.csv"
+            if tm.exists():
+                df = pd.read_csv(tm)
+                required = {"subject", "threshold", "ensemble_acc_all", "ensemble_acc_confident", "ensemble_coverage"}
+                missing = required - set(df.columns)
+                if missing:
+                    raise ValueError(f"{tm} missing columns: {sorted(missing)}")
+                df = df[list(required)].copy()
+                df["ensemble_name"] = ensemble_name
+                grid_path.parent.mkdir(parents=True, exist_ok=True)
+                df.to_csv(grid_path, index=False)
+                return df
 
-        if not fallback_threshold_metrics_path.exists():
+        if not grid_path.exists():
             raise FileNotFoundError(
-                f"Missing ensemble grid CSV: {grid_path}\n"
-                f"Also missing fallback threshold metrics CSV: {fallback_threshold_metrics_path}\n"
-                f"Generate grids by running ensemble_v2 (or export the *_grid.csv files), then rerun."
+                f"Missing stable grid CSV: {grid_path}\n"
+                f"Also no matching run folder found for pattern: {fallback_run_glob}\n"
+                f"Run ensemble_v2, then rerun plot_ensembles to generate the dashboard grids."
             )
 
-        df = pd.read_csv(fallback_threshold_metrics_path)
-        # expected columns in threshold_metrics.csv
-        required = {"subject", "threshold", "ensemble_acc_all", "ensemble_acc_confident", "ensemble_coverage"}
-        missing = required - set(df.columns)
-        if missing:
-            raise ValueError(
-                f"Fallback threshold metrics at {fallback_threshold_metrics_path} missing columns {sorted(missing)}"
-            )
-
-        df = df[list(required)].copy()
+        df = pd.read_csv(grid_path)
         df["ensemble_name"] = ensemble_name
-        # Persist to the requested grid filename so future runs follow the documented structure.
-        grid_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(grid_path, index=False)
         return df
 
     grid_specs = [
         (
             ensemble_v2_dir / "LDA_SVM_equal_grid.csv",
-            ensemble_v2_dir / "models-LDA_SVM__weights-equal" / "threshold_metrics.csv",
+            "models-LDA_SVM__weights-equal*__ens-softvote*",
             "Main: LDA+SVM (equal)",
         ),
         (
             ensemble_v2_dir / "LDA_SVM_RF_global_grid.csv",
-            ensemble_v2_dir / "models-LDA_SVM_RF__weights-baseline_global" / "threshold_metrics.csv",
+            "models-LDA_SVM_RF__weights-baseline_global*__ens-softvote*",
             "Ablation: LDA+SVM+RF (global)",
         ),
         (
             ensemble_v2_dir / "LDA_SVM_baseline_subject_grid.csv",
-            ensemble_v2_dir / "models-LDA_SVM__weights-baseline_subject" / "threshold_metrics.csv",
+            "models-LDA_SVM__weights-baseline_subject*__ens-softvote*",
             "Main: LDA+SVM (subj-weights)",
+        ),
+        (
+            ensemble_v2_dir / "LDA_SVM_stacking_grid.csv",
+            "models-LDA_SVM__*__ens-stacking*",
+            "Stacking: LDA+SVM (meta-learner)",
         ),
     ]
 
     frames = []
-    for grid_path, fallback_path, ensemble_name in grid_specs:
-        frames.append(_load_grid_with_fallback(grid_path, fallback_path, ensemble_name))
+    for grid_path, fallback_glob, ensemble_name in grid_specs:
+        frames.append(_load_grid_with_fallback(grid_path, fallback_glob, ensemble_name))
 
     ens_df = pd.concat(frames, ignore_index=True)
     required = {"subject", "threshold", "ensemble_acc_all", "ensemble_acc_confident", "ensemble_coverage", "ensemble_name"}
@@ -146,6 +160,50 @@ def load_ensemble_grids() -> pd.DataFrame:
     ens_df["ensemble_coverage"] = pd.to_numeric(ens_df["ensemble_coverage"], errors="raise")
 
     return ens_df
+
+
+def load_debounced_grids() -> pd.DataFrame:
+    """
+    Load debounced stability-controller grids produced by `make_debounced_grids.py`.
+    These are stored as top-level `*_debounced_grid.csv` files in outputs/ensemble_v2/.
+    """
+    ensemble_v2_dir = BASE_DIR / "outputs" / "ensemble_v2"
+    paths = sorted(ensemble_v2_dir.glob("*_debounced_grid.csv"))
+    if not paths:
+        return pd.DataFrame()
+
+    frames = []
+    for p in paths:
+        df = pd.read_csv(p)
+        required = {
+            "subject",
+            "threshold",
+            "ensemble_acc_all",
+            "ensemble_acc_confident",
+            "ensemble_coverage",
+            "toggle_rate",
+            "wrong_fire_rate_all",
+        }
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"{p} missing columns: {sorted(missing)}")
+        df = df[list(required)].copy()
+        df["ensemble_name"] = p.stem.replace("_grid", "")
+        frames.append(df)
+
+    out = pd.concat(frames, ignore_index=True)
+    out["subject"] = pd.to_numeric(out["subject"], errors="raise").astype(int)
+    out["threshold"] = pd.to_numeric(out["threshold"], errors="raise")
+    for c in [
+        "ensemble_acc_all",
+        "ensemble_acc_confident",
+        "ensemble_coverage",
+        "toggle_rate",
+        "wrong_fire_rate_all",
+    ]:
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+    out["ensemble_name"] = out["ensemble_name"].astype(str)
+    return out
 
 def configure_matplotlib_style() -> None:
     import matplotlib.pyplot as plt
@@ -268,6 +326,7 @@ def main() -> None:
     baseline_df, baseline_means, best_single_mean = load_baseline_summary(baseline_path)
 
     ens_df = load_ensemble_grids()
+    deb_df = load_debounced_grids()
     grouped = (
         ens_df.groupby(["ensemble_name", "threshold"], as_index=False)
         .agg(
@@ -447,6 +506,56 @@ def main() -> None:
             )
             fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
             _save_fig(fig, visuals_dir / "heatmap_ablation_global_diff_conf_minus_best.png")
+            plt.close(fig)
+    except Exception:
+        pass
+
+    # (8) Stability controller plots (debounced)
+    try:
+        if not deb_df.empty:
+            deb = deb_df.copy()
+            deb["safe_fire"] = deb["ensemble_coverage"] - deb["wrong_fire_rate_all"]
+            agg2 = (
+                deb.groupby(["ensemble_name", "threshold"], as_index=False)
+                .agg(
+                    mean_toggle=("toggle_rate", "mean"),
+                    mean_wrong_fire=("wrong_fire_rate_all", "mean"),
+                    mean_safe_fire=("safe_fire", "mean"),
+                )
+                .sort_values(["ensemble_name", "threshold"])
+            )
+
+            fig, ax = plt.subplots()
+            for name in agg2["ensemble_name"].unique():
+                sub = agg2[agg2["ensemble_name"] == name].sort_values("threshold")
+                ax.plot(sub["threshold"], sub["mean_toggle"], marker="o", linewidth=2, label=name)
+            ax.set_title("Stability (Debounced): Toggle Rate vs Threshold")
+            ax.set_xlabel("Threshold (t_on)")
+            ax.set_ylabel("Mean toggle rate")
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+            _save_fig(fig, visuals_dir / "stability_toggle_rate_vs_threshold.png")
+            plt.close(fig)
+
+            fig, ax = plt.subplots()
+            for name in agg2["ensemble_name"].unique():
+                sub = agg2[agg2["ensemble_name"] == name].sort_values("threshold")
+                ax.plot(sub["threshold"], sub["mean_wrong_fire"], marker="o", linewidth=2, label=name)
+            ax.set_title("Safety (Debounced): Wrong-Fire vs Threshold")
+            ax.set_xlabel("Threshold (t_on)")
+            ax.set_ylabel("Mean wrong-fire rate (all trials)")
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+            _save_fig(fig, visuals_dir / "stability_wrong_fire_vs_threshold.png")
+            plt.close(fig)
+
+            fig, ax = plt.subplots()
+            for name in agg2["ensemble_name"].unique():
+                sub = agg2[agg2["ensemble_name"] == name].sort_values("threshold")
+                ax.plot(sub["threshold"], sub["mean_safe_fire"], marker="o", linewidth=2, label=name)
+            ax.set_title("Usefulness (Debounced): Safe-Fire vs Threshold")
+            ax.set_xlabel("Threshold (t_on)")
+            ax.set_ylabel("Mean safe-fire (coverage − wrong-fire)")
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+            _save_fig(fig, visuals_dir / "stability_safe_fire_vs_threshold.png")
             plt.close(fig)
     except Exception:
         pass

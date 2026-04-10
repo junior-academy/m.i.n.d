@@ -177,6 +177,24 @@ def main() -> None:
     parser.add_argument("--k", type=int, default=3, help="k in k-of-n confirmation (default: 3).")
     parser.add_argument("--n", type=int, default=5, help="n in k-of-n confirmation (default: 5).")
     parser.add_argument(
+        "--off-gap-grid",
+        type=str,
+        default="",
+        help="Optional comma-separated off-gap values to sweep (e.g., '0.05,0.10'). Overrides --off-gap when set.",
+    )
+    parser.add_argument(
+        "--k-grid",
+        type=str,
+        default="",
+        help="Optional comma-separated k values to sweep (e.g., '3,4'). Overrides --k when set.",
+    )
+    parser.add_argument(
+        "--n-grid",
+        type=str,
+        default="",
+        help="Optional comma-separated n values to sweep (e.g., '5,7'). Overrides --n when set.",
+    )
+    parser.add_argument(
         "--also-3a",
         action="store_true",
         help="Also generate debounced grids for validation_3a outputs (writes under m.i.n.d/outputs/validation_3a/).",
@@ -185,6 +203,14 @@ def main() -> None:
 
     subjects = [int(x.strip()) for x in args.subjects.split(",") if x.strip()]
     root = args.root
+
+    off_gaps = (
+        [float(x.strip()) for x in args.off_gap_grid.split(",") if x.strip()]
+        if args.off_gap_grid.strip()
+        else [float(args.off_gap)]
+    )
+    ks = [int(x.strip()) for x in args.k_grid.split(",") if x.strip()] if args.k_grid.strip() else [int(args.k)]
+    ns = [int(x.strip()) for x in args.n_grid.split(",") if x.strip()] if args.n_grid.strip() else [int(args.n)]
 
     # 2a: map stable filenames -> latest run dir patterns
     specs: List[Tuple[str, str]] = [
@@ -198,14 +224,40 @@ def main() -> None:
         if run_dir is None:
             print(f"[debounce] skip (no run dir): {pat}")
             continue
-        _process_run(
-            run_dir=run_dir,
-            subjects=subjects,
-            out_grid_path=(root / out_name),
-            off_gap=float(args.off_gap),
-            k=int(args.k),
-            n=int(args.n),
-        )
+        frames: List[pd.DataFrame] = []
+        for off_gap in off_gaps:
+            for k in ks:
+                for n in ns:
+                    thresholds = _thresholds_from_run(run_dir)
+
+                    actual_subjects: List[int] = []
+                    for s in subjects:
+                        if (run_dir / f"predictions_subject_{int(s)}.csv").exists():
+                            actual_subjects.append(int(s))
+                    if not actual_subjects:
+                        for p in sorted(run_dir.glob("predictions_subject_*.csv")):
+                            try:
+                                sid = int(p.stem.split("_")[-1])
+                                actual_subjects.append(sid)
+                            except Exception:
+                                continue
+                    actual_subjects = sorted(set(actual_subjects))
+
+                    for s in actual_subjects:
+                        df_pred = _load_subject_predictions(run_dir, subject=int(s))
+                        sub = _debounced_metrics_for_subject(
+                            df_pred=df_pred, thresholds=thresholds, off_gap=float(off_gap), k=int(k), n=int(n)
+                        )
+                        sub.insert(0, "subject", int(s))
+                        frames.append(sub)
+
+        out = pd.concat(frames, ignore_index=True).sort_values(["subject", "threshold", "t_off", "k", "n"])
+        out.to_csv(run_dir / "threshold_metrics_debounced.csv", index=False)
+        out_grid_path = root / out_name
+        out_grid_path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(out_grid_path, index=False)
+        print(f"[debounce] wrote {run_dir / 'threshold_metrics_debounced.csv'}")
+        print(f"[debounce] wrote {out_grid_path}")
 
     if args.also_3a:
         val_root = BASE_DIR / "outputs" / "validation_3a" / "ensemble_v2"
@@ -220,14 +272,44 @@ def main() -> None:
                 if run_dir is None:
                     print(f"[debounce] (3a) skip (no run dir): {pat}")
                     continue
-                _process_run(
-                    run_dir=run_dir,
-                    subjects=subjects,
-                    out_grid_path=(val_root / out_name),
-                    off_gap=float(args.off_gap),
-                    k=int(args.k),
-                    n=int(args.n),
-                )
+                frames: List[pd.DataFrame] = []
+                for off_gap in off_gaps:
+                    for k in ks:
+                        for n in ns:
+                            thresholds = _thresholds_from_run(run_dir)
+
+                            actual_subjects: List[int] = []
+                            for s in subjects:
+                                if (run_dir / f"predictions_subject_{int(s)}.csv").exists():
+                                    actual_subjects.append(int(s))
+                            if not actual_subjects:
+                                for p in sorted(run_dir.glob("predictions_subject_*.csv")):
+                                    try:
+                                        sid = int(p.stem.split("_")[-1])
+                                        actual_subjects.append(sid)
+                                    except Exception:
+                                        continue
+                            actual_subjects = sorted(set(actual_subjects))
+
+                            for s in actual_subjects:
+                                df_pred = _load_subject_predictions(run_dir, subject=int(s))
+                                sub = _debounced_metrics_for_subject(
+                                    df_pred=df_pred,
+                                    thresholds=thresholds,
+                                    off_gap=float(off_gap),
+                                    k=int(k),
+                                    n=int(n),
+                                )
+                                sub.insert(0, "subject", int(s))
+                                frames.append(sub)
+
+                out = pd.concat(frames, ignore_index=True).sort_values(["subject", "threshold", "t_off", "k", "n"])
+                out.to_csv(run_dir / "threshold_metrics_debounced.csv", index=False)
+                out_grid_path = val_root / out_name
+                out_grid_path.parent.mkdir(parents=True, exist_ok=True)
+                out.to_csv(out_grid_path, index=False)
+                print(f"[debounce] (3a) wrote {run_dir / 'threshold_metrics_debounced.csv'}")
+                print(f"[debounce] (3a) wrote {out_grid_path}")
         else:
             print("[debounce] validation_3a not found; skipping")
 
