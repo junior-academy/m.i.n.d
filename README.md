@@ -1,80 +1,20 @@
-# JR-Academy 6857 — M.I.N.D Runbook (Complete)
-
-This repo contains:
-
-- `m.i.n.d/` — the full EEG pipeline (BCI IV 2a main experiments + validation + MOABB tooling + Pygame demo)
-- `mind-dashboard/` — a Next.js dashboard that renders results from `m.i.n.d/outputs/**`
-
-This README is a **command-by-command runbook**. It’s intentionally exhaustive.
 
 ---
 
-## 0) One-time setup
+## 1) BCI Competition IV 2a (MAIN) — Full Pipeline
 
-### 0.1 Python environment (recommended)
-
-Use Python **3.10+** (3.11 recommended). If you use `conda`, activate your env first.
-
-```bash
-python3 -V
-python3 -m pip install --upgrade pip
-python3 -m pip install -r m.i.n.d/requirements.txt
-```
-
-Sanity check:
-
-```bash
-python3 - <<'PY'
-import numpy, pandas, sklearn, mne
-print("ok")
-PY
-```
-
-Optional (avoids Matplotlib cache permission warnings on some machines):
-
-```bash
-export MPLCONFIGDIR="$(pwd)/.mplcache"
-mkdir -p "$MPLCONFIGDIR"
-```
-
-### 0.2 Node / dashboard (optional)
-
-```bash
-cd mind-dashboard
-npm install
-```
-
-### 0.3 Data locations (expected)
-
-BCI Competition IV 2a (GDF):
-
-- `m.i.n.d/data/BCICIV_2a_gdf/A01T.gdf` … `A09T.gdf`
-
-BCI Competition IIIa (GDF):
-
-- `m.i.n.d/data/BCICIV_3a_gdf/*.gdf`
-
-PhysioNet EEG Motor Imagery (MOABB/MNE cache; EDF):
-
-- recommended cache root: `m.i.n.d/data/mne_data/`
-
----
-
-## 1) BCI Competition IV 2a (MAIN) — full pipeline
-
-### 1.1 Preprocess (GDF → epochs → `analysis_results/`)
+### 1.1 Preprocess — GDF → Epochs → `analysis_results/`
 
 ```bash
 python3 m.i.n.d/mind_preprocess.py
 ```
 
-Expected outputs:
-
+**Expected outputs:**
 - `m.i.n.d/analysis_results/X_A01T.npy` … `X_A09T.npy`
 - `m.i.n.d/analysis_results/y_A01T.npy` … `y_A09T.npy`
-- plots under `m.i.n.d/analysis_results/plots/`
+- Plots under `m.i.n.d/analysis_results/plots/`
 
-Verify channel count (expected **22 EEG channels**):
+**Verify channel count** (expected **22 EEG channels**):
 
 ```bash
 python3 - <<'PY'
@@ -84,33 +24,36 @@ print("X_A01T shape:", X.shape)  # (n_trials, 22, n_timepoints)
 PY
 ```
 
-### 1.2 Baselines (CSP/FBCSP → LDA/SVM/RF) → `m.i.n.d/outputs/*.csv`
+---
 
-Fast/default:
+### 1.2 Baselines — CSP/FBCSP → LDA/SVM/RF → `m.i.n.d/outputs/*.csv`
 
+**Fast / default:**
 ```bash
 python3 m.i.n.d/features.py
 ```
 
-Publication-grade (recommended): **FBCSP + bandpower**
-
+**Publication-grade (recommended) — FBCSP + bandpower:**
 ```bash
 python3 m.i.n.d/features.py --features fbcsp --include-bandpower
 ```
 
-Optional: nested CV tuning (slower):
-
+**Optional — nested CV tuning (slower):**
 ```bash
 python3 m.i.n.d/features.py --features fbcsp --include-bandpower --tune small
 ```
 
-Key outputs:
+**Key outputs:**
 
-- `m.i.n.d/outputs/classification_results.csv` (per-subject `best_acc`)
-- `m.i.n.d/outputs/classification_summary.csv`
-- `m.i.n.d/outputs/classification_summary_wide.csv`
+| File | Description |
+|---|---|
+| `m.i.n.d/outputs/classification_results.csv` | Per-subject `best_acc` |
+| `m.i.n.d/outputs/classification_summary.csv` | Summary stats |
+| `m.i.n.d/outputs/classification_summary_wide.csv` | Wide format |
 
-### 1.3 Threshold grid (all thresholds > 0.50, step 0.05)
+---
+
+### 1.3 Threshold Grid (all thresholds > 0.50, step 0.05)
 
 ```bash
 THR_GRID="$(python3 - <<'PY'
@@ -120,9 +63,11 @@ PY
 echo "$THR_GRID"
 ```
 
-### 1.4 Ensembles (writes run folders under `m.i.n.d/outputs/ensemble_v2/`)
+---
 
-#### 1.4A Main system: LDA + SVM (recommended)
+### 1.4 Ensembles — `m.i.n.d/outputs/ensemble_v2/`
+
+#### 1.4A — Main System: LDA + SVM ✅ recommended
 
 ```bash
 python3 m.i.n.d/ensemble_v2.py \
@@ -135,7 +80,7 @@ python3 m.i.n.d/ensemble_v2.py \
   --threshold-grid "$THR_GRID"
 ```
 
-#### 1.4B Ablation: LDA + SVM + RF
+#### 1.4B — Ablation: LDA + SVM + RF
 
 ```bash
 python3 m.i.n.d/ensemble_v2.py \
@@ -148,7 +93,7 @@ python3 m.i.n.d/ensemble_v2.py \
   --threshold-grid "$THR_GRID"
 ```
 
-#### 1.4C Optional: stacking meta-learner (slow)
+#### 1.4C — Optional: Stacking Meta-Learner (slow)
 
 ```bash
 python3 m.i.n.d/ensemble_v2.py \
@@ -162,68 +107,75 @@ python3 m.i.n.d/ensemble_v2.py \
   --threshold-grid "$THR_GRID"
 ```
 
-Each run folder contains:
-
+**Each run folder contains:**
 - `subject_results.csv`
 - `threshold_metrics.csv`
 - `run_summary.csv`
-- per-subject prediction CSVs like `predictions_subject_7.csv` (if enabled in that preset/run)
+- Per-subject prediction CSVs like `predictions_subject_7.csv` *(if enabled in that preset/run)*
 
-### 1.5 Stats tests + key numbers + keeper visuals
+---
 
-Paired t-test + Levene (confident acc vs best-single, across thresholds):
+### 1.5 Stats Tests + Key Numbers + Keeper Visuals
 
+**Paired t-test + Levene** (confident acc vs best-single, across thresholds):
 ```bash
 python3 m.i.n.d/stats_tests.py
 ```
 
-Update “key numbers” at the operating threshold (example `0.60`):
-
+**Update key numbers** at the operating threshold (example `0.60`):
 ```bash
 python3 m.i.n.d/update_key_numbers.py --threshold 0.60
 ```
 
-Generate keeper plots:
-
+**Generate keeper plots:**
 ```bash
 python3 m.i.n.d/plot_ensembles.py
 ```
 
-Expected outputs:
+**Expected outputs:**
 
-- `m.i.n.d/outputs/ensemble_v2/stats_tests_confident_vs_best.csv`
-- `m.i.n.d/outputs/key_numbers/key_numbers_summary.csv`
-- `m.i.n.d/outputs/visuals/*.png`
+| File | Description |
+|---|---|
+| `m.i.n.d/outputs/ensemble_v2/stats_tests_confident_vs_best.csv` | Stat test results |
+| `m.i.n.d/outputs/key_numbers/key_numbers_summary.csv` | Key metrics |
+| `m.i.n.d/outputs/visuals/*.png` | Keeper plots |
 
-### 1.6 Pygame demo (no CLI needed; it has an in-app menu)
+---
+
+### 1.6 Pygame Demo
+
+> No CLI arguments needed — the app has an in-app menu.
 
 ```bash
 python3 m.i.n.d/visualizer_pygame.py
 ```
 
-Controls (in-app):
+**Controls:**
 
-- `ENTER` start selected patient/run-set
-- `M` return to menu
-- `SPACE` play/pause
-- `←/→` step trials
-- `[` / `]` threshold down/up (hold SHIFT for bigger step)
-- `TAB` next run (when multiple runs are loaded)
+| Key | Action |
+|---|---|
+| `ENTER` | Start selected patient/run-set |
+| `M` | Return to menu |
+| `SPACE` | Play / Pause |
+| `← / →` | Step trials |
+| `[ / ]` | Threshold down / up *(hold `SHIFT` for bigger step)* |
+| `TAB` | Next run *(when multiple runs are loaded)* |
 
 ---
 
-## 2) BCI Competition IIIa (VALIDATION) — full pipeline
+## 2) BCI Competition IIIa (VALIDATION) — Full Pipeline
 
-### 2.1 Preprocess IIIa (GDF → `analysis_results_3a/`)
+### 2.1 Preprocess IIIa — GDF → `analysis_results_3a/`
 
 ```bash
 python3 m.i.n.d/mind_preprocess_3a.py
 ```
 
-Expected outputs:
-
+**Expected outputs:**
 - `m.i.n.d/analysis_results_3a/X_*.npy`
 - `m.i.n.d/analysis_results_3a/y_*.npy`
+
+---
 
 ### 2.2 Baselines on IIIa
 
@@ -235,7 +187,11 @@ python3 m.i.n.d/features.py \
   --include-bandpower
 ```
 
-### 2.3 Ensemble on IIIa (recommended: avoid nested tuning on tiny n=3)
+---
+
+### 2.3 Ensemble on IIIa
+
+> **Recommended:** avoid nested tuning on tiny n=3
 
 ```bash
 python3 m.i.n.d/ensemble_v2.py \
@@ -251,7 +207,11 @@ python3 m.i.n.d/ensemble_v2.py \
   --threshold-grid "$THR_GRID"
 ```
 
-### 2.4 IIIa stats tests (per-threshold) for each run (equal + baseline_subject)
+---
+
+### 2.4 IIIa Stats Tests (per-threshold)
+
+Run for both `equal` and `baseline_subject` weight schemes:
 
 ```bash
 python3 m.i.n.d/stats_tests_any.py \
@@ -267,11 +227,13 @@ python3 m.i.n.d/stats_tests_any.py \
   --label "BCI IIIa: LDA+SVM (subj-weights)"
 ```
 
-Note: with **n=3 subjects**, p-values will often be non-significant; at very high thresholds, coverage can drop so low that p-values can become `NaN`.
+> ⚠️ With **n=3 subjects**, p-values will often be non-significant. At very high thresholds, coverage can drop so low that p-values become `NaN`.
 
-### 2.5 Generate IIIa keeper visuals (separate from 2a)
+---
 
-Create dashboard-style `*_grid.csv` files (these are just renamed copies of `threshold_metrics.csv`):
+### 2.5 Generate IIIa Keeper Visuals
+
+**Create dashboard-style `*_grid.csv` files** (renamed copies of `threshold_metrics.csv`):
 
 ```bash
 cp m.i.n.d/outputs/validation_3a/ensemble_v2/models-LDA_SVM__weights-equal__feat-fbcsp__ens-softvote__tune-none__cal-sigmoid/threshold_metrics.csv \
@@ -281,7 +243,7 @@ cp m.i.n.d/outputs/validation_3a/ensemble_v2/models-LDA_SVM__weights-baseline_su
   m.i.n.d/outputs/validation_3a/ensemble_v2/LDA_SVM_baseline_subject_grid.csv
 ```
 
-Combine stats into a single CSV (used by the plotter):
+**Combine stats into a single CSV** (used by the plotter):
 
 ```bash
 python3 - <<'PY'
@@ -298,7 +260,7 @@ print("Wrote", out)
 PY
 ```
 
-Generate the 7 keeper plots:
+**Generate the 7 keeper plots:**
 
 ```bash
 python3 m.i.n.d/plot_ensembles_any.py \
@@ -312,49 +274,9 @@ python3 m.i.n.d/plot_ensembles_any.py \
 
 ---
 
-## 3) Dashboard (Next.js) — local run + syncing artifacts
+## 3) External Validation via MOABB *(optional, recommended for generalization story)*
 
-### 3.1 Put demo video in place
-
-```bash
-ls -la mind-dashboard/public/demo/demo.mp4
-```
-
-### 3.2 Sync latest artifacts into `mind-dashboard/public/**`
-
-From repo root:
-
-```bash
-cd mind-dashboard
-node scripts/sync_data.mjs
-```
-
-What this copies:
-
-- 2a CSVs → `mind-dashboard/public/mind_data/`
-- 3a CSVs → `mind-dashboard/public/mind_data/validation_3a/`
-- 2a visuals → `mind-dashboard/public/visuals/`
-- 3a visuals → `mind-dashboard/public/visuals/validation_3a/`
-
-### 3.3 Run the dashboard
-
-```bash
-cd mind-dashboard
-npm run dev
-```
-
-Production build check:
-
-```bash
-cd mind-dashboard
-npm run build
-```
-
----
-
-## 4) External validation via MOABB (optional, recommended for generalization story)
-
-### 4.1 Install MOABB (if missing)
+### 3.1 Install MOABB
 
 ```bash
 python3 -m pip install moabb
@@ -364,13 +286,13 @@ print("moabb", moabb.__version__)
 PY
 ```
 
-### 4.2 MOABB PhysionetMI (2-class) — baseline pipelines (CSP+LDA vs CSP+SVM)
+---
 
-This uses a robust download wrapper and stores results under:
+### 3.2 PhysionetMI (2-class) — Baseline Pipelines (CSP+LDA vs CSP+SVM)
 
-- `m.i.n.d/outputs/moabb/physionetmi/`
+Results stored under `m.i.n.d/outputs/moabb/physionetmi/`.
 
-Recommended: start small (1 subject), then scale up.
+> **Recommended:** start with 1 subject, then scale up.
 
 ```bash
 bash m.i.n.d/scripts/run_moabb_physionet.sh \
@@ -385,7 +307,7 @@ bash m.i.n.d/scripts/run_moabb_physionet.sh \
   --download-retries 10
 ```
 
-Then compute pipeline stats:
+**Then compute pipeline stats:**
 
 ```bash
 python3 m.i.n.d/moabb_stats_tests.py \
@@ -393,14 +315,13 @@ python3 m.i.n.d/moabb_stats_tests.py \
   --out m.i.n.d/outputs/moabb/physionetmi/stats_tests_pipelines.csv
 ```
 
-### 4.3 MOABB ensemble evaluation (Option 1): compare ensembles + threshold gating
+---
 
-This writes under:
+### 3.3 MOABB Ensemble Evaluation — Compare Ensembles + Threshold Gating
 
-- `m.i.n.d/outputs/moabb_ensemble/<dataset>/...`
+Results written under `m.i.n.d/outputs/moabb_ensemble/<dataset>/...`
 
-PhysionetMI (2-class):
-
+**PhysionetMI (2-class):**
 ```bash
 bash m.i.n.d/scripts/run_moabb_ensemble.sh \
   --dataset physionetmi \
@@ -410,8 +331,7 @@ bash m.i.n.d/scripts/run_moabb_ensemble.sh \
   --out-dir m.i.n.d/outputs/moabb_ensemble
 ```
 
-BNCI2014_001 (4-class):
-
+**BNCI2014_001 (4-class):**
 ```bash
 bash m.i.n.d/scripts/run_moabb_ensemble.sh \
   --dataset bnci2014_001 \
@@ -420,25 +340,21 @@ bash m.i.n.d/scripts/run_moabb_ensemble.sh \
   --out-dir m.i.n.d/outputs/moabb_ensemble
 ```
 
-Then sync the dashboard artifacts:
-
-```bash
-cd mind-dashboard
-node scripts/sync_data.mjs
-npm run dev
-```
-
 ---
 
-## 5) “Run everything overnight” (Mac-friendly)
+## 4) Run Everything Overnight *(Mac-friendly)*
 
-### 5.1 Keep the Mac awake (safe to turn off monitors)
+### 4.1 Keep the Mac Awake
+
+> Safe to turn off monitors.
 
 ```bash
 caffeinate -dimsu &
 ```
 
-### 5.2 Full 2a + 3a pipeline in one background job
+---
+
+### 4.2 Full 2a + 3a Pipeline in One Background Job
 
 From repo root:
 
@@ -505,25 +421,25 @@ echo "[done]"
 ' > overnight_run.log 2>&1 &
 ```
 
-Monitor:
-
+**Monitor progress:**
 ```bash
 tail -f overnight_run.log
 ```
 
 ---
 
-## 6) Git / storage notes (important)
+## 5) Git / Storage Notes *(important)*
 
-- **Do not commit datasets** (GDF/EDF) or large caches.
-- GitHub blocks files **>100MB**. Videos like `mind-dashboard/public/demo/demo.mp4` at **1.5MB** are fine.
+> ⚠️ **Do not commit datasets** (GDF/EDF) or large caches.
+
+- GitHub blocks files **> 100 MB**
+- Demo videos and large media should be stored externally or in the dashboard repo
 
 ---
 
-## 7) Quick “did it work?” checklist
+## 6) Quick "Did It Work?" Checklist
 
-2a:
-
+**2a:**
 ```bash
 ls -la m.i.n.d/analysis_results/X_A01T.npy
 ls -la m.i.n.d/outputs/classification_results.csv
@@ -531,18 +447,9 @@ ls -la m.i.n.d/outputs/ensemble_v2/stats_tests_confident_vs_best.csv
 ls -la m.i.n.d/outputs/visuals
 ```
 
-3a:
-
+**3a:**
 ```bash
 ls -la m.i.n.d/analysis_results_3a
 ls -la m.i.n.d/outputs/validation_3a/baselines/classification_results.csv
 ls -la m.i.n.d/outputs/validation_3a/visuals
-```
-
-dashboard:
-
-```bash
-cd mind-dashboard
-node scripts/sync_data.mjs
-npm run dev
 ```
