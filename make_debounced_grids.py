@@ -81,7 +81,6 @@ def _debounced_metrics_for_subject(
         t_off = float(max(0.0, t_on - float(off_gap)))
         cfg = DebounceConfig(t_on=t_on, t_off=t_off, k=int(k), n=int(n))
         fired, latched = debounced_gate(p_ens=p_ens, y_hat=y_hat, cfg=cfg)
-        # Fill preds for fired trials using latched; non-fired irrelevant for confident acc.
         y_pred = np.where(fired, latched, -1)
 
         acc_all = float(np.mean(y_hat == y_true))
@@ -125,7 +124,6 @@ def _process_run(
         if (run_dir / f"predictions_subject_{int(s)}.csv").exists():
             actual_subjects.append(int(s))
     if not actual_subjects:
-        # Fallback: discover from filenames.
         for p in sorted(run_dir.glob("predictions_subject_*.csv")):
             try:
                 sid = int(p.stem.split("_")[-1])
@@ -142,10 +140,8 @@ def _process_run(
 
     out = pd.concat(frames, ignore_index=True).sort_values(["subject", "threshold"])
 
-    # Persist debounced threshold metrics inside the run folder for traceability.
     out.to_csv(run_dir / "threshold_metrics_debounced.csv", index=False)
 
-    # Also write a dashboard-style grid CSV at a stable path.
     out_grid_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(out_grid_path, index=False)
 

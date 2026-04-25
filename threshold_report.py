@@ -189,7 +189,6 @@ def main() -> None:
             f"coverage={float(pick['mean_coverage']):.3f} toggle={float(pick['mean_toggle_rate']):.3f}"
         )
 
-    # Print a compact table to stdout
     show_cols = [
         "threshold",
     ]

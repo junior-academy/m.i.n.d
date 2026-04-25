@@ -9,7 +9,6 @@ def load_baseline_summary(path: Path) -> Tuple[pd.DataFrame, Dict[str, float], f
     baseline_df = pd.read_csv(path)
     cols = set(baseline_df.columns)
 
-    # Preferred "long" format (as described in the prompt)
     if {"model", "mean_acc"}.issubset(cols):
         baseline_df = baseline_df.copy()
         baseline_df["model"] = baseline_df["model"].astype(str)
@@ -26,7 +25,6 @@ def load_baseline_summary(path: Path) -> Tuple[pd.DataFrame, Dict[str, float], f
         best_single_mean = float(best_single_rows.iloc[0]["mean_acc"])
         return baseline_df, baseline_means, best_single_mean
 
-    # Back-compat "wide" format produced by this repo (single row with LDA_mean/SVM_mean/RF_mean)
     required_wide = {"LDA_mean", "SVM_mean", "RF_mean"}
     if not required_wide.issubset(cols):
         raise ValueError(
@@ -39,12 +37,10 @@ def load_baseline_summary(path: Path) -> Tuple[pd.DataFrame, Dict[str, float], f
     svm_mean = float(row["SVM_mean"])
     rf_mean = float(row["RF_mean"])
 
-    # SD columns are optional in wide form; include if present.
     lda_sd = float(row["LDA_subject_std"]) if "LDA_subject_std" in cols else float("nan")
     svm_sd = float(row["SVM_subject_std"]) if "SVM_subject_std" in cols else float("nan")
     rf_sd = float(row["RF_subject_std"]) if "RF_subject_std" in cols else float("nan")
 
-    # Best-Single isn't present in the wide summary; compute from per-subject results if available.
     results_path = BASE_DIR / "outputs" / "classification_results.csv"
     if results_path.exists():
         results_df = pd.read_csv(results_path)

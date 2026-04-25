@@ -8,26 +8,36 @@ SD RF accuracy (across subjects),0.16199933278423148
 Mean Best-Single accuracy,0.6281216189201669
 SD Best-Single accuracy (across subjects),0.15032003399979357
 Operating threshold (max prob),0.6
-LDA_SVM_RF_global_grid mean confident accuracy @ 0.6,0.791069559760951
-LDA_SVM_RF_global_grid mean coverage @ 0.6,0.3816756362258769
-LDA_SVM_RF_global_grid mean (conf - Best) @ 0.6,0.162947940840784
-LDA_SVM_RF_global_grid paired t-test p (conf vs Best) @ 0.6,0.0244330912356836
-LDA_SVM_RF_global_grid Levene p (conf vs Best) @ 0.6,0.5213441308300804
-LDA_SVM_baseline_subject_grid mean confident accuracy @ 0.6,0.7516332961245327
-LDA_SVM_baseline_subject_grid mean coverage @ 0.6,0.42289243214333466
-LDA_SVM_baseline_subject_grid mean (conf - Best) @ 0.6,0.12351167720436573
-LDA_SVM_baseline_subject_grid paired t-test p (conf vs Best) @ 0.6,0.0358955939491327
-LDA_SVM_baseline_subject_grid Levene p (conf vs Best) @ 0.6,0.4387928601900298
+Ablation: LDA+SVM+RF (global) mean confident accuracy @ 0.6,0.7841926021976255
+Ablation: LDA+SVM+RF (global) mean coverage @ 0.6,0.4643390381958372
+Ablation: LDA+SVM+RF (global) mean (conf - Best) @ 0.6,0.1560709832774586
+Ablation: LDA+SVM+RF (global) paired t-test p (conf vs Best) @ 0.6,0.0001619759997585
+Ablation: LDA+SVM+RF (global) Levene p (conf vs Best) @ 0.6,0.2173522825068765
+LDA_SVM_RF_global_debounced_grid mean confident accuracy @ 0.6,0.3354708963817123
+LDA_SVM_RF_global_debounced_grid mean coverage @ 0.6,0.03938249320319112
+LDA_SVM_RF_global_debounced_grid mean (conf - Best) @ 0.6,-0.29265072253845464
+LDA_SVM_RF_global_debounced_grid paired t-test p (conf vs Best) @ 0.6,0.0051746627490304
+LDA_SVM_RF_global_debounced_grid Levene p (conf vs Best) @ 0.6,0.9591591565716576
+LDA_SVM_baseline_subject_debounced_grid mean confident accuracy @ 0.6,0.28311775272116635
+LDA_SVM_baseline_subject_debounced_grid mean coverage @ 0.6,0.24933563979141596
+LDA_SVM_baseline_subject_debounced_grid mean (conf - Best) @ 0.6,-0.3450038661990006
+LDA_SVM_baseline_subject_debounced_grid paired t-test p (conf vs Best) @ 0.6,0.0010165199521806
+LDA_SVM_baseline_subject_debounced_grid Levene p (conf vs Best) @ 0.6,0.0323031423561158
 Main: LDA+SVM (equal) mean confident accuracy @ 0.6,0.7009137666644097
 Main: LDA+SVM (equal) mean coverage @ 0.6,0.47557327182778447
 Main: LDA+SVM (equal) mean (conf - Best) @ 0.6,0.07279214774424281
 Main: LDA+SVM (equal) paired t-test p (conf vs Best) @ 0.6,0.2235743854543682
 Main: LDA+SVM (equal) Levene p (conf vs Best) @ 0.6,0.8764206905739365
-Stacking mean confident accuracy @ 0.6,0.6407909865138733
-Stacking mean coverage @ 0.6,0.47097706912688864
-Stacking mean (conf - Best) @ 0.6,0.012669367593706404
-Stacking paired t-test p (conf vs Best) @ 0.6,0.8302766266460132
-Stacking Levene p (conf vs Best) @ 0.6,0.7178617948221546
+Main: LDA+SVM (subj-weights) mean confident accuracy @ 0.6,0.6632325323016681
+Main: LDA+SVM (subj-weights) mean coverage @ 0.6,0.815607311583545
+Main: LDA+SVM (subj-weights) mean (conf - Best) @ 0.6,0.035110913381501185
+Main: LDA+SVM (subj-weights) paired t-test p (conf vs Best) @ 0.6,0.0237296108200172
+Main: LDA+SVM (subj-weights) Levene p (conf vs Best) @ 0.6,0.5682704189071267
+Stacking: LDA+SVM (meta-learner) mean confident accuracy @ 0.6,0.6407909865138733
+Stacking: LDA+SVM (meta-learner) mean coverage @ 0.6,0.47097706912688864
+Stacking: LDA+SVM (meta-learner) mean (conf - Best) @ 0.6,0.012669367593706404
+Stacking: LDA+SVM (meta-learner) paired t-test p (conf vs Best) @ 0.6,0.8302766266460132
+Stacking: LDA+SVM (meta-learner) Levene p (conf vs Best) @ 0.6,0.7178617948221546
 Confusion matrix (4x4),
 Cohen's kappa,
 Latency,
