@@ -99,7 +99,6 @@ def main() -> None:
     ens_at_thr = select_grid_at_threshold(ens_df, threshold=args.threshold)
     stats_df = load_stats_tests()
 
-    # per-subject table
     per_subject = pd.DataFrame(
         {
             "subject": baseline_results["subject"].astype(int),
@@ -111,7 +110,6 @@ def main() -> None:
         }
     )
 
-    # Add ensemble columns (confident acc + coverage) for each ensemble_name at chosen threshold
     for ens_name in sorted(ens_at_thr["ensemble_name"].unique()):
         block = ens_at_thr[ens_at_thr["ensemble_name"] == ens_name][
             ["subject", "ensemble_acc_confident", "ensemble_coverage"]
@@ -133,7 +131,6 @@ def main() -> None:
     per_subject_path = KEY_DIR / "key_numbers_per_subject.csv"
     per_subject.to_csv(per_subject_path, index=False)
 
-    # summary table with key numbers + placeholders for still-missing metrics
     summary_rows: List[Tuple[str, object]] = []
     for _, row in baseline_summary.iterrows():
         summary_rows.append((f"Mean {row['model']} accuracy", float(row["mean_acc"])))
@@ -141,7 +138,6 @@ def main() -> None:
 
     summary_rows.append(("Operating threshold (max prob)", float(args.threshold)))
 
-    # ensemble summaries @ threshold, including comparisons to Best-Single and stats test results if available
     grouped = (
         ens_at_thr.groupby("ensemble_name", as_index=False)
         .agg(
@@ -162,7 +158,6 @@ def main() -> None:
                 summary_rows.append((f"{row['ensemble_name']} paired t-test p (conf vs Best) @ {args.threshold}", float(r["paired_t_pvalue"])))
                 summary_rows.append((f"{row['ensemble_name']} Levene p (conf vs Best) @ {args.threshold}", float(r["levene_pvalue"])))
 
-    # Placeholders for still-missing metrics
     summary_rows.extend(
         [
             ("Confusion matrix (4x4)", ""),
@@ -175,7 +170,6 @@ def main() -> None:
     summary_path = KEY_DIR / "key_numbers_summary.csv"
     summary_df.to_csv(summary_path, index=False)
 
-    # Choose the best "main" candidate at this threshold by mean diff (conf - best), if available.
     claim_rows = []
     if not grouped.empty:
         grouped = grouped.copy()

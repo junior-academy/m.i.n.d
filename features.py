@@ -58,7 +58,7 @@ def find_xy_files(data_dir):
 
     if len(x_files) != len(y_files):
         raise ValueError(f"Mismatch: {len(x_files)} X files but {len(y_files)} y files")
-    pairs = list(zip(x_files, y_files)) # create pairs of (X, y) files for each subject
+    pairs = list(zip(x_files, y_files))
     return pairs
 
 def load_subject(x_path, y_path):
@@ -66,7 +66,7 @@ def load_subject(x_path, y_path):
     X = np.load(x_path)
     y = np.load(y_path)
 
-    le = LabelEncoder() # encode class labels as integers
+    le = LabelEncoder()
     y = le.fit_transform(y)
 
     return X, y
@@ -252,7 +252,7 @@ def main():
         all_results.append(results)
 
     results_df = pd.DataFrame(all_results)
-    if results_df.empty: # fallback
+    if results_df.empty:
         print("No results to save.")
         return
     
@@ -263,7 +263,6 @@ def main():
     results_df = results_df.sort_values("subject")
     results_df.to_csv(args.out_dir / "classification_results.csv", index=False)
 
-    # Long-form summary (publication-friendly and easier to plot)
     mean_cols = {
         "LDA": "LDA_mean_acc",
         "SVM": "SVM_mean_acc",
@@ -288,7 +287,6 @@ def main():
     )
     summary_long.to_csv(args.out_dir / "classification_summary.csv", index=False)
 
-    # Back-compat wide summary (kept for older tooling)
     summary_wide = pd.DataFrame(
         [
             {

@@ -1,0 +1,7 @@
+metric,value
+kappa_committed_global_t0.60,0.5499211341996656
+kappa_committed_mean_subject_t0.60,0.5298448248552402
+committed_trials_t0.60,2053.0
+total_trials,2581.0
+coverage_t0.60,0.795428128632313
+policy_latency_us_per_trial_software_only,1.3243101026822446

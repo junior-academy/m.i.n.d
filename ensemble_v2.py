@@ -150,7 +150,6 @@ def _parse_models(arg: str) -> List[str]:
     bad = [m for m in models if m not in allowed]
     if bad:
         raise ValueError(f"Unknown model(s) {bad}; allowed: {sorted(allowed)}")
-    # keep user order, remove duplicates
     out = []
     for m in models:
         if m not in out:
@@ -299,7 +298,6 @@ def oof_stacking_proba(
     for train_idx, test_idx in skf.split(X_meta, y):
         X_tr, y_tr = X_meta[train_idx], y[train_idx]
         X_te = X_meta[test_idx]
-        # Some scikit-learn versions removed/changed `multi_class`; keep it version-agnostic.
         lr = LogisticRegression(max_iter=1000, solver="lbfgs")
         lr.fit(X_tr, y_tr)
         meta[test_idx] = lr.predict_proba(X_te)
@@ -513,7 +511,6 @@ def main():
 
     for x_path, y_path in tqdm(pairs, total=len(pairs), desc="Subjects", unit="subj"):
         subject_id = int(subject_key(x_path))
-        # Keep prints minimal; tqdm provides the primary progress UI.
         _tqdm_write(f"[ensemble_v2] Subject {subject_id}: {x_path.name} / {y_path.name}")
         X, y = load_subject(x_path, y_path)
 
@@ -557,10 +554,8 @@ def main():
         pred_all = p_ens.argmax(axis=1)
         max_prob = p_ens.max(axis=1)
 
-        # per-model accuracies from OOF
         per_model_acc = {f"{name}_oof_acc": float(accuracy_score(y, p.argmax(axis=1))) for name, p in proba.items()}
 
-        # Default threshold metrics for subject_results.csv
         default_metrics = threshold_metrics(y=y, p_ens=p_ens, threshold=args.threshold)
 
         best_single_acc = (
@@ -582,12 +577,10 @@ def main():
             }
         )
 
-        # Threshold sweep metrics
         for t in thresholds:
             m = threshold_metrics(y=y, p_ens=p_ens, threshold=t)
             threshold_rows.append({"subject": subject_id, **m})
 
-        # Per-trial outputs
         pred_df = pd.DataFrame(
             {
                 "subject": subject_id,
@@ -606,7 +599,6 @@ def main():
     subject_results_df = pd.DataFrame(subject_rows).sort_values("subject")
     threshold_metrics_df = pd.DataFrame(threshold_rows).sort_values(["subject", "threshold"])
 
-    # Add deltas vs best-single (default threshold)
     subject_results_df["delta_all_vs_best"] = subject_results_df["ensemble_acc_all"] - subject_results_df["best_single_acc"]
     subject_results_df["delta_conf_vs_best"] = (
         subject_results_df["ensemble_acc_confident"] - subject_results_df["best_single_acc"]
@@ -615,7 +607,6 @@ def main():
     subject_results_df.to_csv(out_dir / "subject_results.csv", index=False)
     threshold_metrics_df.to_csv(out_dir / "threshold_metrics.csv", index=False)
 
-    # Run-level summary + paired tests (defensible claims)
     summary_rows = []
     for col in ["ensemble_acc_all", "ensemble_acc_confident", "ensemble_coverage", "best_single_acc", "delta_all_vs_best", "delta_conf_vs_best"]:
         stats = _t_confidence_interval(subject_results_df[col].to_numpy(dtype=float))
