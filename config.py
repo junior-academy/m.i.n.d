@@ -1,49 +1,36 @@
-"""
-Configuration parameters for motor imagery BCI analysis
-"""
-import numpy as np
-import os
+"""Configuration for the held-out-session motor-imagery BCI evaluation."""
+
+from __future__ import annotations
+
 from pathlib import Path
 
-# ICA components:
-ICA_N_COMPONENTS = 20
-
-# file paths
 BASE_DIR = Path(__file__).resolve().parent
-DATA_PATH = str(BASE_DIR / "data" / "BCICIV_2a_gdf")
-OUTPUT_PATH = str(BASE_DIR / "analysis_results")
-PLOTS_PATH = str(Path(OUTPUT_PATH) / "plots")
+DATA_DIR = BASE_DIR / "data" / "BCICIV_2a_gdf"
+EPOCH_DIR = BASE_DIR / "analysis_results"
+OUTPUT_DIR = BASE_DIR / "outputs" / "heldout_session"
 
-# dataset params
-SUBJECTS_TRAIN = ['A01T', 'A02T', 'A03T', 'A04T', 'A05T', 'A06T', 'A07T', 'A08T', 'A09T']
-SUBJECTS_TEST = ['A01E', 'A02E', 'A03E', 'A04E', 'A05E', 'A06E', 'A07E', 'A08E', 'A09E']
+SUBJECT_IDS = tuple(range(1, 10))
+SUBJECTS_TRAIN = tuple(f"A{i:02d}T" for i in SUBJECT_IDS)
+SUBJECTS_TEST = tuple(f"A{i:02d}E" for i in SUBJECT_IDS)
 
-# Preprocessing parameters
-FILTER_LOW = 8      # Hz - high-pass filter
-FILTER_HIGH = 30    # Hz - low-pass filter
-NOTCH_FREQ = 50     # Hz - power line noise (50 in Europe)
-
-# Epoch parameters
-TMIN = 0            # seconds - start time relative to cue
-TMAX = 4.5          # seconds - end time relative to cue
-CLASS_DESCRIPTIONS = ['769', '770', '771', '772']
-CLASS_NAMES = {
-    '769': 'Left Hand',
-    '770': 'Right Hand',
-    '771': 'Both Feet',
-    '772': 'Tongue'
-}
-
-# Classification parameters
-CSP_N_COMPONENTS = 4
-CV_FOLDS = 5
 RANDOM_SEED = 42
 
-# Motor cortex channels
-MOTOR_CHANNELS = ['EEG-C3', 'EEG-C4', 'EEG-Cz']
+FILTER_LOW = 8.0
+FILTER_HIGH = 30.0
+NOTCH_FREQ = 50.0
+TMIN = 0.0
+TMAX = 4.5
+ICA_N_COMPONENTS = 20
 
-# Time-frequency parameters
-TF_FREQS = np.arange(4, 30, 2)  # 4-30 Hz in 2 Hz steps
-os.makedirs(DATA_PATH, exist_ok=True)
-os.makedirs(OUTPUT_PATH, exist_ok=True)
-os.makedirs(PLOTS_PATH, exist_ok=True)
+SFREQ = 250.0
+FBCSP_BANDS = ((8.0, 12.0), (12.0, 16.0), (16.0, 20.0), (20.0, 30.0))
+CSP_N_COMPONENTS = 4
+INCLUDE_BANDPOWER = True
+
+BASE_MODELS = ("LDA", "SVM")
+COMPARISON_MODEL = "LDA"
+CALIBRATION_METHOD = "sigmoid"
+CALIBRATION_CV = 3
+
+OPERATING_COVERAGE = 0.60
+THRESHOLD_GRID = tuple(round(x / 100, 2) for x in range(0, 101, 5))

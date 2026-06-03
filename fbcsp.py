@@ -52,10 +52,11 @@ def _get_csp_class():
         from mne.decoding import CSP  # type: ignore
 
         return CSP
-    except ModuleNotFoundError:
-        from csp import CSP  # type: ignore
-
-        return CSP
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "MNE is required for reported FBCSP/CSP runs. Install the pinned "
+            "requirements instead of using the removed local CSP fallback."
+        ) from exc
 
 
 @dataclass
@@ -90,16 +91,11 @@ class FBCSPFeatures(BaseEstimator, TransformerMixin):
         """
         Create a CSP instance with numerically-stable defaults.
 
-        We prefer covariance regularization when using MNE's CSP to avoid
-        NaNs/Infs from ill-conditioned covariance estimates (common in EEG).
-        Falls back gracefully for the local CSP implementation.
+        Use MNE's CSP with covariance regularization to avoid NaNs/Infs from
+        ill-conditioned covariance estimates common in EEG.
         """
         CSP = _get_csp_class()
-        # MNE supports string regs like "ledoit_wolf"; local fallback may not.
-        try:
-            return CSP(n_components=self.n_components, reg="ledoit_wolf", log=True, norm_trace=False)
-        except TypeError:
-            return CSP(n_components=self.n_components, reg=None, log=True, norm_trace=False)
+        return CSP(n_components=self.n_components, reg="ledoit_wolf", log=True, norm_trace=False)
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         X = _as_3d(X)

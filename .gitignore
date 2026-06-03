@@ -1,2 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
 *.gdf
 *.edf
+
+analysis_results/
+analysis_results_3a/
+analysis_results_backup_*/
+outputs/
+accuracy_plots/
+confusion_matrices/
+stability_*.png
+
+data/mne_data/
