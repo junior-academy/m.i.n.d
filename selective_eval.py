@@ -9,12 +9,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from adaptation import adapt_train_test
 from config import (
+    ALIGNMENT_EPS,
     BASE_MODELS,
     COMPARISON_MODEL,
     EPOCH_DIR,
     OPERATING_COVERAGE,
     OUTPUT_DIR,
+    SESSION_ADAPTATION,
     SUBJECT_IDS,
     THRESHOLD_GRID,
 )
@@ -74,18 +77,29 @@ def _threshold_rows(subject: int, y_true: np.ndarray, name: str, proba: np.ndarr
     return rows
 
 
-def run(epoch_dir: Path = EPOCH_DIR, out_dir: Path = OUTPUT_DIR, operating_coverage: float = OPERATING_COVERAGE) -> Path:
+def run(
+    epoch_dir: Path = EPOCH_DIR,
+    out_dir: Path = OUTPUT_DIR,
+    operating_coverage: float = OPERATING_COVERAGE,
+    adaptation: str = SESSION_ADAPTATION,
+) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     subject_rows = []
     curve_rows = []
 
     for subject in SUBJECT_IDS:
         X_train, y_train, X_test, y_test = _load_pair(epoch_dir, subject)
+        X_train_eval, X_test_eval = adapt_train_test(
+            X_train,
+            X_test,
+            method=adaptation,
+            eps=ALIGNMENT_EPS,
+        )
         pred = fit_predict_subject(
             subject=subject,
-            X_train=X_train,
+            X_train=X_train_eval,
             y_train=y_train,
-            X_test=X_test,
+            X_test=X_test_eval,
             y_test=y_test,
             model_names=BASE_MODELS,
         )
@@ -102,6 +116,7 @@ def run(epoch_dir: Path = EPOCH_DIR, out_dir: Path = OUTPUT_DIR, operating_cover
                 "subject": subject,
                 "n_train": int(X_train.shape[0]),
                 "n_test": int(X_test.shape[0]),
+                "adaptation": adaptation,
                 "coverage": float(operating_coverage),
                 "ensemble_threshold_at_coverage": ens_threshold,
                 "lda_threshold_at_coverage": lda_threshold,
@@ -123,6 +138,9 @@ def run(epoch_dir: Path = EPOCH_DIR, out_dir: Path = OUTPUT_DIR, operating_cover
         json.dumps(
             {
                 "evaluation": "fit feature extractors and decoders on A0xT, score once on A0xE",
+                "session_adaptation": adaptation,
+                "adaptation_label_use": "A0xE labels are used only for final scoring",
+                "alignment_eps": ALIGNMENT_EPS,
                 "base_models": BASE_MODELS,
                 "ensemble": "equal soft vote",
                 "comparison": COMPARISON_MODEL,
@@ -138,10 +156,19 @@ def run(epoch_dir: Path = EPOCH_DIR, out_dir: Path = OUTPUT_DIR, operating_cover
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run held-out-session selective evaluation.")
     parser.add_argument("--epoch-dir", type=Path, default=EPOCH_DIR)
-    parser.add_argument("--out-dir", type=Path, default=OUTPUT_DIR)
+    parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--coverage", type=float, default=OPERATING_COVERAGE)
+    parser.add_argument("--adaptation", default=SESSION_ADAPTATION, choices=("euclidean", "euclidean_alignment", "none"))
     args = parser.parse_args()
-    result = run(epoch_dir=args.epoch_dir, out_dir=args.out_dir, operating_coverage=args.coverage)
+    out_dir = args.out_dir
+    if out_dir is None:
+        out_dir = OUTPUT_DIR if args.adaptation != "none" else OUTPUT_DIR.parent / "heldout_session_no_adaptation"
+    result = run(
+        epoch_dir=args.epoch_dir,
+        out_dir=out_dir,
+        operating_coverage=args.coverage,
+        adaptation=args.adaptation,
+    )
     print(f"Wrote {result}")
 
 

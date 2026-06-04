@@ -4,6 +4,7 @@ __pycache__/
 
 *.gdf
 *.edf
+data/BCICIV_2a_gdf/true_labels/
 
 analysis_results/
 analysis_results_3a/
@@ -14,3 +15,5 @@ confusion_matrices/
 stability_*.png
 
 data/mne_data/
+
+*.tex
