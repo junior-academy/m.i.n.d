@@ -1,10 +1,12 @@
 .DS_Store
 __pycache__/
 *.py[cod]
+.mne_home/
 
 *.gdf
 *.edf
 data/BCICIV_2a_gdf/true_labels/
+data/moabb/
 
 analysis_results/
 analysis_results_3a/
@@ -17,3 +19,11 @@ stability_*.png
 data/mne_data/
 
 *.tex
+!writeup.tex
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.pdf
+*.synctex.gz

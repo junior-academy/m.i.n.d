@@ -22,6 +22,7 @@ from config import (
     THRESHOLD_GRID,
 )
 from decode import accuracy, equal_soft_vote, fit_predict_subject
+from reliability import metrics_row, reliability_rows, risk_coverage_rows, write_reliability_diagrams
 
 
 def _load_pair(epoch_dir: Path, subject: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -58,34 +59,19 @@ def _mask_for_coverage(proba: np.ndarray, coverage: float) -> tuple[np.ndarray, 
     return mask, threshold
 
 
-def _threshold_rows(subject: int, y_true: np.ndarray, name: str, proba: np.ndarray) -> list[dict[str, float | int | str]]:
-    rows: list[dict[str, float | int | str]] = []
-    conf = np.max(proba, axis=1)
-    pred = np.argmax(proba, axis=1)
-    for threshold in THRESHOLD_GRID:
-        mask = conf >= float(threshold)
-        rows.append(
-            {
-                "subject": subject,
-                "decoder": name,
-                "threshold": float(threshold),
-                "coverage": float(mask.mean()),
-                "risk": float(np.mean(pred[mask] != y_true[mask])) if mask.any() else float("nan"),
-                "accuracy": float(np.mean(pred[mask] == y_true[mask])) if mask.any() else float("nan"),
-            }
-        )
-    return rows
-
-
 def run(
     epoch_dir: Path = EPOCH_DIR,
     out_dir: Path = OUTPUT_DIR,
     operating_coverage: float = OPERATING_COVERAGE,
     adaptation: str = SESSION_ADAPTATION,
+    include_eegnet: bool = False,
+    eegnet_epochs: int = 60,
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     subject_rows = []
     curve_rows = []
+    metric_rows = []
+    diagram_rows = []
 
     for subject in SUBJECT_IDS:
         X_train, y_train, X_test, y_test = _load_pair(epoch_dir, subject)
@@ -105,11 +91,34 @@ def run(
         )
         p_ens = equal_soft_vote(pred.proba)
         p_lda = pred.proba[COMPARISON_MODEL]
+        extra_probas: dict[str, np.ndarray] = {}
+        if include_eegnet:
+            from eegnet import EEGNetConfig, fit_predict_eegnet
+
+            eeg_y_true, p_eegnet = fit_predict_eegnet(
+                X_train=X_train_eval,
+                y_train=y_train,
+                X_test=X_test_eval,
+                y_test=y_test,
+                config=EEGNetConfig(epochs=eegnet_epochs),
+            )
+            if not np.array_equal(eeg_y_true, pred.y_true):
+                raise RuntimeError("EEGNet label encoding does not match the classical decoder encoding")
+            extra_probas["EEGNet"] = p_eegnet
 
         ens_mask, ens_threshold = _mask_for_coverage(p_ens, operating_coverage)
         lda_mask, lda_threshold = _mask_for_coverage(p_lda, operating_coverage)
         ens_acc = accuracy(pred.y_true, p_ens, ens_mask)
         lda_acc = accuracy(pred.y_true, p_lda, lda_mask)
+        extra_subject_cols = {}
+        for extra_name, extra_proba in extra_probas.items():
+            extra_mask, extra_threshold = _mask_for_coverage(extra_proba, operating_coverage)
+            extra_acc = accuracy(pred.y_true, extra_proba, extra_mask)
+            key = extra_name.lower()
+            extra_subject_cols[f"{key}_threshold_at_coverage"] = extra_threshold
+            extra_subject_cols[f"{key}_acc_matched_coverage"] = extra_acc
+            extra_subject_cols[f"delta_ensemble_minus_{key}"] = ens_acc - extra_acc
+            extra_subject_cols[f"{key}_acc_all"] = accuracy(pred.y_true, extra_proba)
 
         subject_rows.append(
             {
@@ -125,15 +134,49 @@ def run(
                 "delta_ensemble_minus_lda": ens_acc - lda_acc,
                 "ensemble_acc_all": accuracy(pred.y_true, p_ens),
                 "lda_acc_all": accuracy(pred.y_true, p_lda),
+                **extra_subject_cols,
             }
         )
-        curve_rows.extend(_threshold_rows(subject, pred.y_true, "ensemble", p_ens))
-        curve_rows.extend(_threshold_rows(subject, pred.y_true, "LDA", p_lda))
+        decoder_outputs = {"ensemble": p_ens, "LDA": p_lda, **extra_probas}
+        for name, proba in decoder_outputs.items():
+            curve_rows.extend(
+                risk_coverage_rows(
+                    dataset="BCI_IV_2a",
+                    subject=subject,
+                    decoder=name,
+                    y_true=pred.y_true,
+                    proba=proba,
+                    thresholds=THRESHOLD_GRID,
+                )
+            )
+            metric_rows.append(
+                metrics_row(
+                    dataset="BCI_IV_2a",
+                    subject=subject,
+                    decoder=name,
+                    y_true=pred.y_true,
+                    proba=proba,
+                )
+            )
+            diagram_rows.extend(
+                reliability_rows(
+                    dataset="BCI_IV_2a",
+                    subject=subject,
+                    decoder=name,
+                    y_true=pred.y_true,
+                    proba=proba,
+                )
+            )
 
     subject_df = pd.DataFrame(subject_rows).sort_values("subject")
     curve_df = pd.DataFrame(curve_rows).sort_values(["decoder", "subject", "threshold"])
+    metrics_df = pd.DataFrame(metric_rows).sort_values(["decoder", "subject"])
+    reliability_df = pd.DataFrame(diagram_rows).sort_values(["decoder", "subject", "bin"])
     subject_df.to_csv(out_dir / "subject_results.csv", index=False)
     curve_df.to_csv(out_dir / "risk_coverage.csv", index=False)
+    metrics_df.to_csv(out_dir / "reliability_metrics.csv", index=False)
+    reliability_df.to_csv(out_dir / "reliability_diagram_bins.csv", index=False)
+    write_reliability_diagrams(reliability_df, out_dir)
     (out_dir / "config.json").write_text(
         json.dumps(
             {
@@ -144,6 +187,8 @@ def run(
                 "base_models": BASE_MODELS,
                 "ensemble": "equal soft vote",
                 "comparison": COMPARISON_MODEL,
+                "eegnet": "included as optional comparison" if include_eegnet else "not run",
+                "eegnet_epochs": eegnet_epochs if include_eegnet else None,
                 "operating_coverage": operating_coverage,
                 "threshold_grid": THRESHOLD_GRID,
             },
@@ -159,6 +204,8 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=None)
     parser.add_argument("--coverage", type=float, default=OPERATING_COVERAGE)
     parser.add_argument("--adaptation", default=SESSION_ADAPTATION, choices=("euclidean", "euclidean_alignment", "none"))
+    parser.add_argument("--include-eegnet", action="store_true", help="Add optional EEGNet deep-learning comparison.")
+    parser.add_argument("--eegnet-epochs", type=int, default=60)
     args = parser.parse_args()
     out_dir = args.out_dir
     if out_dir is None:
@@ -168,6 +215,8 @@ def main() -> None:
         out_dir=out_dir,
         operating_coverage=args.coverage,
         adaptation=args.adaptation,
+        include_eegnet=args.include_eegnet,
+        eegnet_epochs=args.eegnet_epochs,
     )
     print(f"Wrote {result}")
 

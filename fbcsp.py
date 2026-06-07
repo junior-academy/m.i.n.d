@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -48,6 +50,10 @@ def _logvar(X: np.ndarray, axis: int = -1) -> np.ndarray:
 
 
 def _get_csp_class():
+    fake_home = Path(__file__).resolve().parent / ".mne_home"
+    (fake_home / ".mne").mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("_MNE_FAKE_HOME_DIR", str(fake_home))
+    os.environ.setdefault("MNE_LOGGING_LEVEL", "WARNING")
     try:
         from mne.decoding import CSP  # type: ignore
 

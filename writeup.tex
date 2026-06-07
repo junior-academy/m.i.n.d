@@ -1,0 +1,254 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\title{M.I.N.D.: Reliability-Gated Motor Imagery EEG Decoding with Calibrated Classical Ensembles}
+\author{JR-Academy 6857}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Motor-imagery brain-computer interfaces (BCIs) are often evaluated as ordinary
+classifiers, but assistive control has a stricter requirement: an uncertain
+decoder should withhold action rather than issue a wrong command. This paper
+presents M.I.N.D., a reliability-focused motor-imagery EEG decoding pipeline
+that combines label-free session adaptation, filter-bank common spatial
+patterns (FBCSP), calibrated LDA and SVM classifiers, equal-weight probability
+voting, and confidence-based selective prediction. On BCI Competition IV
+Dataset 2a, the LDA+SVM ensemble improves all-trial accuracy over LDA
+(\(0.525\) vs. \(0.435\)), lowers mean Expected Calibration Error (ECE)
+(\(0.141\) vs. \(0.176\)), and lowers mean multiclass Brier score
+(\(0.591\) vs. \(0.672\)). At a matched 60\% operating coverage, the ensemble
+also improves selective accuracy over LDA by \(0.089\) on average across the
+nine subjects. A small MOABB external-validation subset using Cho2017 and
+PhysionetMI shows that matched-coverage accuracy and Brier-score improvements
+persist beyond BCI IV 2a, although ECE worsens in that tiny subset. EEGNet is
+included as an optional modern deep-learning comparison, not as the project
+focus. The central contribution is not a claim of state-of-the-art accuracy; it
+is a reproducible framework for evaluating whether a BCI decoder is reliable
+enough to act.
+\end{abstract}
+
+\section{Purpose and Exigence}
+
+Motor-imagery BCIs decode imagined movement from EEG. The long-term assistive
+goal is compelling: a person with impaired movement could use neural activity
+to control a prosthetic or communication device. The practical problem is that
+EEG is low-amplitude, noisy, and non-stationary. A model that looks acceptable
+under average classification accuracy can still be unusable if it fires
+incorrect commands at the wrong time.
+
+M.I.N.D. is built around a human-centered control principle:
+\[
+  \text{a wrong action is worse than no action.}
+\]
+Therefore, the project evaluates the decoder as a selective controller. When
+confidence is high, the system emits a command; when confidence is low, it
+abstains. This makes reliability metrics such as coverage, risk, calibration,
+and Brier score central rather than secondary.
+
+\section{Background Knowledge}
+
+\subsection{Motor Imagery EEG}
+
+Motor imagery produces measurable changes in sensorimotor rhythms, especially
+in the mu and beta ranges. These signals are subject-specific and vary across
+recording sessions due to electrode placement, fatigue, artifacts, and changes
+in cognitive strategy. This makes cross-session evaluation more realistic than
+within-session cross-validation.
+
+\subsection{FBCSP}
+
+Common Spatial Patterns (CSP) learns spatial filters that emphasize
+class-discriminative variance patterns. M.I.N.D. uses filter-bank CSP over
+four bands:
+\[
+  8\!-\!12,\quad 12\!-\!16,\quad 16\!-\!20,\quad 20\!-\!30\ \mathrm{Hz}.
+\]
+Bandpower features are concatenated with CSP features. This keeps the main
+pipeline interpretable and compatible with small EEG datasets.
+
+\subsection{Calibration and Selective Prediction}
+
+The base classifiers output class probabilities after sigmoid calibration.
+For a probability vector \(p(y \mid x)\), confidence is defined as
+\[
+  c(x) = \max_y p(y \mid x).
+\]
+At threshold \(t\), the decoder fires only when \(c(x) \geq t\). We report:
+\begin{itemize}
+  \item coverage: the fraction of trials that fire,
+  \item risk: error rate among fired trials,
+  \item ECE: confidence-accuracy mismatch across confidence bins,
+  \item Brier score: squared error of the full probability distribution.
+\end{itemize}
+
+\section{Architecture and Novel Application}
+
+\subsection{Label-Free Session Adaptation}
+
+The primary evaluation trains each subject-specific decoder on BCI Competition
+IV 2a training session \(A0xT\) and scores once on the paired evaluation
+session \(A0xE\). To reduce cross-session covariance shift without using
+evaluation labels, M.I.N.D. applies Euclidean alignment independently to each
+session.
+
+Let \(X_i \in \mathbb{R}^{C \times T}\) be the \(i\)-th epoch. Its sample
+covariance is
+\[
+  S_i = \frac{(X_i - \bar{X}_i)(X_i - \bar{X}_i)^\top}{T - 1}.
+\]
+The regularized covariance is
+\[
+  \Sigma_i = S_i + \epsilon \frac{\operatorname{tr}(S_i)}{C}I,
+\]
+where \(\epsilon = 10^{-6}\). The session reference covariance is
+\[
+  \bar{\Sigma} = \frac{1}{N}\sum_{i=1}^{N}\Sigma_i.
+\]
+Each epoch is aligned by
+\[
+  X_i^{\mathrm{EA}} = \bar{\Sigma}^{-1/2}X_i.
+\]
+The evaluation labels are used only after all predictions have been produced.
+No \(A0xE\) labels are used to fit the alignment transform, feature extractor,
+classifier, calibration model, threshold, or ensemble rule.
+
+\subsection{Main Decoder}
+
+After alignment, the main decoder is:
+\[
+  \text{EA} \rightarrow \text{FBCSP + bandpower} \rightarrow
+  \text{calibrated LDA},
+\]
+\[
+  \text{EA} \rightarrow \text{FBCSP + bandpower} \rightarrow
+  \text{calibrated SVM}.
+\]
+The ensemble is an equal soft vote:
+\[
+  p_{\mathrm{ens}}(y \mid x) =
+  \frac{1}{2}p_{\mathrm{LDA}}(y \mid x)
+  + \frac{1}{2}p_{\mathrm{SVM}}(y \mid x).
+\]
+The pre-specified classical comparison is calibrated LDA. This keeps the
+central research question focused: does a calibrated probability ensemble plus
+abstention improve reliability over a strong, simple classical baseline?
+
+\subsection{EEGNet Comparison}
+
+EEGNet is included as a modern deep-learning comparison only. The project does
+not use EEGNet inside the ensemble and does not tune the architecture to chase
+state-of-the-art performance. The optional implementation follows the standard
+EEGNet pattern: temporal convolution, depthwise spatial convolution,
+separable temporal convolution, dropout, and a softmax classifier. It emits
+probabilities into the same evaluation tables as LDA and the ensemble:
+risk-coverage curves, ECE, Brier score, and reliability diagrams. This allows
+the paper to compare the reliability-controlled classical pipeline against a
+recognizable deep baseline without making deep learning the project's focus.
+
+\section{Evaluation}
+
+\subsection{Datasets}
+
+The primary dataset is BCI Competition IV Dataset 2a, using nine subjects and
+the train/evaluation session split \(A0xT \rightarrow A0xE\). External
+validation is implemented through MOABB. The current external smoke subset
+uses one subject each from Cho2017 and PhysionetMI; the code supports larger
+MOABB runs by increasing the number of subjects.
+
+\subsection{Metrics}
+
+The evaluation reports standard accuracy and reliability-focused metrics:
+\begin{itemize}
+  \item all-trial accuracy,
+  \item matched-coverage selective accuracy,
+  \item risk-coverage curves,
+  \item Expected Calibration Error,
+  \item multiclass Brier score,
+  \item reliability diagrams.
+\end{itemize}
+For the headline BCI IV 2a analysis, the operating coverage is fixed at
+60\%. The subject-level ensemble-vs-LDA deltas are summarized with a
+Wilcoxon signed-rank test.
+
+\subsection{BCI IV 2a Findings}
+
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule
+Metric & Ensemble & LDA & Ensemble - LDA \\
+\midrule
+All-trial accuracy & 0.525 & 0.435 & +0.090 \\
+Matched-coverage accuracy & 0.613 & 0.524 & +0.089 \\
+ECE & 0.141 & 0.176 & -0.035 \\
+Brier score & 0.591 & 0.672 & -0.081 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Lower ECE and Brier score indicate better probabilistic reliability. The
+ensemble improves both metrics on the primary dataset while also improving
+all-trial and matched-coverage accuracy. The Wilcoxon signed-rank test for
+matched-coverage accuracy gives \(p = 0.037\) for the one-sided hypothesis
+that the ensemble improves over LDA, with the important limitation that
+\(n = 9\) subjects is small.
+
+\subsection{MOABB External Validation Findings}
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+Dataset & Subjects & \(\Delta\) Acc. & \(\Delta\) ECE & \(\Delta\) Brier \\
+\midrule
+Cho2017 & 1 & +0.048 & +0.011 & -0.030 \\
+PhysionetMI & 1 & +0.222 & +0.068 & -0.103 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The MOABB smoke subset shows that the matched-coverage accuracy and Brier
+score gains persist beyond BCI IV 2a. However, ECE is worse for the ensemble
+on both one-subject external checks. This is a useful limitation: averaging
+calibrated base probabilities can improve discrimination and squared
+probability error while still requiring ensemble-level recalibration for
+confidence-bin alignment. The larger MOABB run should therefore be used to
+decide whether an extra calibration layer is needed after soft voting.
+
+\subsection{Reproducible Artifacts}
+
+The held-out BCI IV 2a evaluation writes:
+\begin{itemize}
+  \item \texttt{outputs/heldout\_session/subject\_results.csv},
+  \item \texttt{outputs/heldout\_session/risk\_coverage.csv},
+  \item \texttt{outputs/heldout\_session/reliability\_metrics.csv},
+  \item \texttt{outputs/heldout\_session/reliability\_diagram\_bins.csv},
+  \item \texttt{outputs/heldout\_session/reliability\_diagrams/}.
+\end{itemize}
+The MOABB validation writes the same artifact types under
+\texttt{outputs/moabb\_external/}. EEGNet can be added to these outputs with
+the \texttt{--include-eegnet} flag after installing PyTorch.
+
+\section{Conclusion}
+
+M.I.N.D. reframes motor-imagery EEG decoding as a reliability problem rather
+than a pure accuracy problem. On BCI Competition IV 2a, the calibrated LDA+SVM
+ensemble improves accuracy, ECE, and Brier score over calibrated LDA. MOABB
+smoke validation suggests that the accuracy and Brier-score gains can persist
+outside the primary benchmark, while also revealing a calibration limitation:
+the ensemble may need post-vote recalibration to improve ECE consistently.
+
+The strongest claim is therefore measured and defensible: a lightweight,
+interpretable, calibrated ensemble with selective prediction can make BCI
+commands more reliable, and the project now evaluates that claim with the
+right reliability metrics across both the primary benchmark and external
+MOABB datasets. EEGNet provides a modern comparison point, but the novelty of
+M.I.N.D. is the reliability-gated assistive-control framing and the
+leakage-aware evaluation protocol.
+
+\end{document}
