@@ -1,0 +1,18 @@
+{
+  "model": "all",
+  "use_ea": true,
+  "calibrate": true,
+  "ensemble": "deep",
+  "ensemble_weights": "validation",
+  "post_ensemble_calibration": true,
+  "uncertainty_score": "max-prob",
+  "coverage_target": 0.6,
+  "include_moabb": false,
+  "moabb_datasets": [
+    "Cho2017",
+    "PhysionetMI"
+  ],
+  "moabb_subject_limit": null,
+  "epochs": 20,
+  "seed": 42
+}

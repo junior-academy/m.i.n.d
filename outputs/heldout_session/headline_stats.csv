@@ -1,0 +1,2 @@
+n_subjects,coverage,mean_ensemble_acc,mean_lda_acc,mean_delta_ensemble_minus_lda,median_delta_ensemble_minus_lda,wilcoxon_statistic,wilcoxon_p_greater,note
+9,0.6,0.6125551879723545,0.5243029047151633,0.08825228325719106,0.0867052023121387,38.0,0.037109375,"Wilcoxon signed-rank, one-sided ensemble > LDA; N=9 is limited."

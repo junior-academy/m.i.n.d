@@ -1,0 +1,2 @@
+dataset,subject,split,model,use_ea,calibrated,uncertainty_score,coverage_target,score_cutoff,n_trials,accuracy_all,macro_f1,brier,ece,selective_accuracy,selective_risk,coverage_observed
+BCI_IV_2a,1,A0xT_to_A0xE,v1_lda,True,True,max-prob,0.6,0.5210926359441823,288,0.7256944444444444,0.7237543832633633,0.40919348874425343,0.1761511823526346,0.8439306358381503,0.1560693641618497,0.6006944444444444

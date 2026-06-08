@@ -1,0 +1,2 @@
+dataset,model,use_ea,calibrated,uncertainty_score,coverage_target,mean_accuracy_all,mean_macro_f1,mean_brier,mean_ece,mean_selective_accuracy,mean_selective_risk,mean_coverage_observed,n_subjects
+BCI_IV_2a,v1_lda,True,True,max-prob,0.6,0.7256944444444444,0.7237543832633633,0.40919348874425343,0.1761511823526346,0.8439306358381503,0.1560693641618497,0.6006944444444444,1

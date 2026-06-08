@@ -1,0 +1,2 @@
+dataset,subject,split,n_train,n_test,adaptation,coverage,ensemble_threshold_at_coverage,lda_threshold_at_coverage,ensemble_acc_matched_coverage,lda_acc_matched_coverage,delta_ensemble_minus_lda,ensemble_ece,lda_ece,delta_ece_ensemble_minus_lda,ensemble_brier,lda_brier,delta_brier_ensemble_minus_lda
+Cho2017,1,stratified_trial_split,130,70,euclidean,0.6,0.5711674374968739,0.5635097257729863,0.6904761904761905,0.6428571428571429,0.04761904761904756,0.06594424709143838,0.05534914597972908,0.010595101111709304,0.4471732912050552,0.4768943740498862,-0.029721082844830993

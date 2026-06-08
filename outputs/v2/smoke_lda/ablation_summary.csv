@@ -1,0 +1,2 @@
+dataset,ablation,setting,mean_selective_accuracy,mean_ece,mean_brier
+BCI_IV_2a,model,v1_lda,0.5236606439572956,0.17603861484821265,0.6722904484563914

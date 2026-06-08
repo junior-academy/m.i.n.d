@@ -1,0 +1,15 @@
+{
+  "model": "lda",
+  "use_ea": true,
+  "calibrate": false,
+  "ensemble": "none",
+  "ensemble_weights": "equal",
+  "post_ensemble_calibration": false,
+  "uncertainty_score": "max-prob",
+  "coverage_target": 0.6,
+  "include_moabb": false,
+  "moabb_datasets": [],
+  "moabb_subject_limit": null,
+  "epochs": 60,
+  "seed": 42
+}
