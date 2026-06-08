@@ -9,6 +9,19 @@ import numpy as np
 import pandas as pd
 
 
+def _weighted_reliability_bins(df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for bin_id, bin_df in df.groupby("bin"):
+        valid = bin_df.dropna(subset=["confidence", "accuracy"])
+        count = float(valid["count"].sum())
+        if count <= 0:
+            continue
+        confidence = float((valid["confidence"] * valid["count"]).sum() / count)
+        accuracy = float((valid["accuracy"] * valid["count"]).sum() / count)
+        rows.append({"bin": bin_id, "confidence": confidence, "accuracy": accuracy, "count": int(count)})
+    return pd.DataFrame(rows)
+
+
 def _as_probability_matrix(proba: np.ndarray) -> np.ndarray:
     proba = np.asarray(proba, dtype=float)
     if proba.ndim != 2:
@@ -166,11 +179,7 @@ def write_reliability_diagrams(reliability_df: pd.DataFrame, out_dir: Path) -> N
     for dataset, ds_df in reliability_df.groupby("dataset"):
         fig, ax = plt.subplots(figsize=(6, 5))
         for decoder, dec_df in ds_df.groupby("decoder"):
-            grouped = (
-                dec_df.groupby("bin", as_index=False)
-                .agg(confidence=("confidence", "mean"), accuracy=("accuracy", "mean"), count=("count", "sum"))
-                .dropna(subset=["confidence", "accuracy"])
-            )
+            grouped = _weighted_reliability_bins(dec_df)
             if not grouped.empty:
                 ax.plot(grouped["confidence"], grouped["accuracy"], marker="o", label=decoder)
         ax.plot([0, 1], [0, 1], color="0.4", linestyle="--", linewidth=1, label="perfect")
