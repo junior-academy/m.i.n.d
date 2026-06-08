@@ -21,11 +21,11 @@ data/mne_data/
 *.tex
 !writeup.tex
 !writeup_v2.tex
-!v3_plan.tex
 *.aux
 *.fdb_latexmk
 *.fls
 *.log
 *.out
 *.pdf
+!public_artifacts/**/*.pdf
 *.synctex.gz

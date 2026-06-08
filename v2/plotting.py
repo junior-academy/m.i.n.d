@@ -69,8 +69,9 @@ def _setup_matplotlib(out_dir: Path):
 
     plt.rcParams.update(
         {
-            "font.family": "sans-serif",
-            "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+            "font.family": "serif",
+            "font.serif": ["Computer Modern Roman", "CMU Serif", "STIXGeneral", "DejaVu Serif"],
+            "mathtext.fontset": "cm",
             "font.size": 7,
             "axes.labelsize": 7,
             "axes.titlesize": 8,
@@ -118,6 +119,7 @@ def _pretty_dataset(dataset: str) -> str:
         "BCI_IV_2a": "BCI Competition IV 2a",
         "Cho2017": "Cho et al. 2017",
         "PhysionetMI": "PhysioNet MI",
+        "BNCI2014_001": "BNCI 2014-001",
     }
     return names.get(dataset, dataset.replace("_", " "))
 

@@ -27,11 +27,12 @@ Dataset 2a, the LDA+SVM ensemble improves all-trial accuracy over LDA
 also improves selective accuracy over LDA by \(0.089\) on average across the
 nine subjects. A small MOABB external-validation subset using Cho2017 and
 PhysionetMI shows that matched-coverage accuracy and Brier-score improvements
-persist beyond BCI IV 2a, although ECE worsens in that tiny subset. EEGNet is
-included as an optional modern deep-learning comparison, not as the project
-focus. The central contribution is not a claim of state-of-the-art accuracy; it
-is a reproducible framework for evaluating whether a BCI decoder is reliable
-enough to act.
+persist beyond BCI IV 2a, although ECE worsens in that tiny subset. This
+writeup is retained as the classical baseline record for the final paper;
+modern deep models, IIIa validation, broader MOABB validation, calibration
+ablations, and controller replay belong to the v2 paper branch. The central
+contribution is not a claim of state-of-the-art accuracy; it is a reproducible
+framework for evaluating whether a BCI decoder is reliable enough to act.
 \end{abstract}
 
 \section{Purpose and Exigence}
@@ -90,6 +91,24 @@ At threshold \(t\), the decoder fires only when \(c(x) \geq t\). We report:
 
 \section{Architecture and Novel Application}
 
+\subsection{System Framing}
+
+M.I.N.D. is best understood as a three-layer assistive-control architecture
+rather than a single classifier. The first layer is a signal layer that turns
+raw motor-imagery EEG into subject-specific features while reducing
+cross-session covariance shift. The second layer is a probabilistic decoding
+layer that compares simple calibrated models and combines complementary
+decision boundaries by soft voting. The third layer is a control layer that
+decides whether the probability evidence is strong enough to issue an action.
+
+This separation is important for the claim. The project does not argue that
+one classifier is universally best. It argues that an assistive BCI should
+expose its uncertainty to the controller, and that the controller should be
+allowed to withhold action when the neural evidence is weak. In this framing,
+coverage is a usability variable, selective risk is a safety variable, and
+calibration is the bridge between the machine-learning model and the user's
+trust in the device.
+
 \subsection{Label-Free Session Adaptation}
 
 The primary evaluation trains each subject-specific decoder on BCI Competition
@@ -139,6 +158,20 @@ The ensemble is an equal soft vote:
 The pre-specified classical comparison is calibrated LDA. This keeps the
 central research question focused: does a calibrated probability ensemble plus
 abstention improve reliability over a strong, simple classical baseline?
+
+\subsection{Decision Contract}
+
+The decoder output is not treated as a direct prosthetic command. It is treated
+as a proposed command with an attached reliability score. At deployment time,
+the downstream device would receive one of two states:
+\[
+  \text{FIRE}(y) \quad \text{or} \quad \text{HOLD}.
+\]
+This command contract gives the user and device a predictable failure mode. A
+low-confidence trial does not become a random movement class; it becomes an
+explicit non-action. The benchmark evaluation is therefore aligned with the
+intended use case: a model is better only if it improves correct actions at
+matched coverage or lowers risk without hiding unusably low coverage.
 
 \subsection{EEGNet Comparison}
 
@@ -220,6 +253,21 @@ probability error while still requiring ensemble-level recalibration for
 confidence-bin alignment. The larger MOABB run should therefore be used to
 decide whether an extra calibration layer is needed after soft voting.
 
+\subsection{Role in the Final Paper}
+
+This v1 writeup should be used as the classical reliability baseline, not as a
+separate final submission. Its paper-facing role is to motivate three choices
+that carry into v2: leakage-aware cross-session evaluation, calibrated
+probabilities, and selective prediction. The broader validation ingredients
+now live in v2, where local BCI Competition IIIa, five-subject MOABB runs,
+BNCI2014\_001, uncertainty-score ablations, temperature-scaling ablations, and
+controller replay are evaluated under one output schema.
+
+The v1 limitation is clear and should remain visible: equal soft voting
+improves discrimination and Brier score, but it does not solve calibration
+reliability by itself. That limitation is exactly why the final paper should
+emphasize post-ensemble calibration and controller-level replay in v2.
+
 \subsection{Reproducible Artifacts}
 
 The held-out BCI IV 2a evaluation writes:
@@ -236,19 +284,18 @@ the \texttt{--include-eegnet} flag after installing PyTorch.
 
 \section{Conclusion}
 
-M.I.N.D. reframes motor-imagery EEG decoding as a reliability problem rather
-than a pure accuracy problem. On BCI Competition IV 2a, the calibrated LDA+SVM
-ensemble improves accuracy, ECE, and Brier score over calibrated LDA. MOABB
-smoke validation suggests that the accuracy and Brier-score gains can persist
-outside the primary benchmark, while also revealing a calibration limitation:
-the ensemble may need post-vote recalibration to improve ECE consistently.
+M.I.N.D. v1 reframes motor-imagery EEG decoding as a reliability problem
+rather than a pure accuracy problem. On BCI Competition IV 2a, the calibrated
+LDA+SVM ensemble improves accuracy, ECE, and Brier score over calibrated LDA.
+MOABB smoke validation suggests that the accuracy and Brier-score gains can
+persist outside the primary benchmark, while also revealing a calibration
+limitation: the ensemble may need post-vote recalibration to improve ECE
+consistently.
 
-The strongest claim is therefore measured and defensible: a lightweight,
-interpretable, calibrated ensemble with selective prediction can make BCI
-commands more reliable, and the project now evaluates that claim with the
-right reliability metrics across both the primary benchmark and external
-MOABB datasets. EEGNet provides a modern comparison point, but the novelty of
-M.I.N.D. is the reliability-gated assistive-control framing and the
-leakage-aware evaluation protocol.
+The strongest v1 claim is therefore measured and baseline-oriented: a
+lightweight, interpretable, calibrated ensemble with selective prediction can
+make BCI commands more reliable than forced-choice LDA, and the final v2 paper
+extends that claim with stronger deep models, broader external validation, and
+device-facing controller replay.
 
 \end{document}

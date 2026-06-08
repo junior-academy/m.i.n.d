@@ -8,8 +8,10 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 EPOCH_DIR = BASE_DIR / "analysis_results"
 OUTPUT_DIR = BASE_DIR / "outputs" / "v2"
 MOABB_DATA_DIR = BASE_DIR / "data" / "moabb"
+BCI_IIIA_DATA_DIR = BASE_DIR / "data" / "BCICIV_3a_gdf"
 
 SUBJECT_IDS = tuple(range(1, 10))
+BCI_IIIA_SUBJECT_IDS = ("k3b", "k6b", "l1b")
 RANDOM_SEED = 42
 ALIGNMENT_EPS = 1e-6
 
@@ -22,4 +24,3 @@ DEEP_EPOCHS = 60
 DEEP_BATCH_SIZE = 32
 DEEP_LR = 1e-3
 VALIDATION_SIZE = 0.20
-

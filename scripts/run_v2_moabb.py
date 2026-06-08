@@ -31,6 +31,7 @@ def main() -> None:
         include_moabb=True,
         moabb_datasets=args.datasets,
         moabb_subject_limit=args.subject_limit,
+        include_bci_iiia=False,
         out_dir=Path(args.out_dir),
         epochs=args.epochs,
     )

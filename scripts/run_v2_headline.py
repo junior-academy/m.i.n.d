@@ -34,6 +34,7 @@ def main() -> None:
             include_moabb=False,
             moabb_datasets=[],
             moabb_subject_limit=None,
+            include_bci_iiia=False,
             out_dir=out_dir,
         )
     print(f"Wrote headline runs under {base}")

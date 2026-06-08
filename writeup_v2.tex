@@ -105,6 +105,24 @@ soft voting, again using only training-session validation data.
 
 \section{Architecture and Novel Application}
 
+\subsection{Architectural Thesis}
+
+The v2 architecture is organized around a reliability stack: preprocessing,
+representation learning, probabilistic calibration, selective prediction, and
+artifact-level auditability. Each layer answers a different deployment
+question. Euclidean alignment asks whether train and evaluation sessions can
+be made more comparable without labels. The model layer asks whether compact
+deep backbones can learn stronger spatial-temporal features than classical
+FBCSP baselines. Calibration asks whether the probabilities can be trusted.
+Selective prediction asks whether the model knows when not to act. The output
+tables and figures make each of these claims inspectable at subject level.
+
+This framing keeps v2 from becoming merely a larger model. The scientific
+claim is not that deep learning is automatically better for EEG. The claim is
+that modern backbones are useful only if they preserve the assistive-control
+contract: higher accuracy, lower selective risk, and better probability
+quality under a held-out-session protocol.
+
 \subsection{Modular v2 Pipeline}
 
 The v2 code is organized into dataset loading, preprocessing, model fitting,
@@ -139,6 +157,23 @@ validation-weighted voting with post-ensemble calibration enabled. This means
 that both the mixture rule and calibration remain internal to the training
 session.
 
+\subsection{Reliability Interface}
+
+All v2 models expose the same interface:
+\[
+  x \mapsto \left(p(y \mid x),\ u(x),\ a(x)\right),
+\]
+where \(p(y \mid x)\) is the class-probability vector, \(u(x)\) is an
+uncertainty score, and \(a(x)\) is the selective controller action at the
+chosen operating coverage:
+\[
+  a(x) \in \{\mathrm{FIRE},\mathrm{HOLD}\}.
+\]
+This shared interface makes LDA, EEGNet, the spatial-attention model, and the
+deep ensemble comparable as controllers, not just as classifiers. It also
+supports future replay through a debounced stability controller without
+changing the trained model.
+
 \section{Validation Protocol}
 
 The primary evaluation is BCI Competition IV Dataset 2a. For each of nine
@@ -152,6 +187,19 @@ post-ensemble calibration. The output directory is
 \texttt{outputs/v2/full\_deep\_bci\_iv\_2a\_validation\_postcal/}. Combined
 paper artifacts are generated under
 \texttt{outputs/v2/paper\_artifacts/}.
+
+The validation protocol is designed around explicit threats to validity:
+\begin{itemize}
+  \item \textbf{Session leakage:} all training, early stopping, calibration,
+  weighting, and threshold choices are made before evaluation labels are used.
+  \item \textbf{Subject heterogeneity:} results are reported per subject before
+  being averaged, so a headline result can be checked for outlier dependence.
+  \item \textbf{Calibration fragility:} ECE, Brier score, and reliability-bin
+  support are reported alongside accuracy.
+  \item \textbf{Coverage gaming:} selective accuracy is compared at matched
+  coverage, and risk-coverage curves show whether gains survive beyond a
+  single operating point.
+\end{itemize}
 
 \section{Evaluation}
 
@@ -184,7 +232,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{figures/figure_1_headline_performance_BCI_IV_2a.pdf}
+  \includegraphics[width=\linewidth]{outputs/v2/paper_artifacts/figures/figure_1_headline_performance_BCI_IV_2a.pdf}
   \caption{\textbf{Headline cross-session performance and reliability.}
   Across nine BCI Competition IV 2a subjects, the v2 deep models improve
   all-trial accuracy and matched 60\%-coverage selective accuracy over the v1
@@ -197,7 +245,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.72\linewidth]{figures/figure_2_risk_coverage_BCI_IV_2a.pdf}
+  \includegraphics[width=0.72\linewidth]{outputs/v2/paper_artifacts/figures/figure_2_risk_coverage_BCI_IV_2a.pdf}
   \caption{\textbf{Risk-coverage behavior for selective prediction.}
   The curves show the error rate among trials retained at each target coverage.
   A useful assistive-control decoder should move down and to the right: lower
@@ -209,7 +257,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.72\linewidth]{figures/figure_3_reliability_support_BCI_IV_2a.pdf}
+  \includegraphics[width=0.72\linewidth]{outputs/v2/paper_artifacts/figures/figure_3_reliability_support_BCI_IV_2a.pdf}
   \caption{\textbf{Trial-weighted reliability with confidence-bin support.}
   Points compare predicted confidence with empirical accuracy, while marker
   size and the lower panel report how many trials fall in each bin. This is the
@@ -222,7 +270,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.86\linewidth]{figures/figure_4_subject_deltas_BCI_IV_2a.pdf}
+  \includegraphics[width=0.86\linewidth]{outputs/v2/paper_artifacts/figures/figure_4_subject_deltas_BCI_IV_2a.pdf}
   \caption{\textbf{Subject-paired gains relative to v1 LDA.}
   Each dot is one subject's improvement over the v1 LDA baseline, and the
   vertical line marks the mean paired delta for each v2 model. This figure
@@ -235,7 +283,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.72\linewidth]{figures/figure_5_coverage_sweep_BCI_IV_2a.pdf}
+  \includegraphics[width=0.72\linewidth]{outputs/v2/paper_artifacts/figures/figure_5_coverage_sweep_BCI_IV_2a.pdf}
   \caption{\textbf{Selective accuracy at practical operating coverages.}
   The 40\%, 60\%, and 80\% operating points summarize how each decoder behaves
   as the system is allowed to abstain more or less often. This supports the
@@ -273,6 +321,48 @@ figures and two compact table files:
   \item \texttt{coverage\_sweep\_summary\_table.csv}.
 \end{itemize}
 
+\subsection{External Validation and Stress Tests}
+
+The paper-facing validation now includes three stress tests beyond the primary
+nine-subject BCI IV 2a run. First, a local BCI Competition IIIa loader
+evaluates the same LDA reliability policy on three additional four-class
+motor-imagery subjects. On this independent local benchmark, LDA achieves
+\(0.659\) all-trial accuracy and \(0.769\) selective accuracy at \(0.614\)
+observed coverage.
+
+Second, MOABB validation was expanded from smoke tests to five subjects each
+from Cho2017, PhysionetMI, and BNCI2014\_001. Cho2017 reaches \(0.640\)
+all-trial accuracy and \(0.724\) selective accuracy with low ECE (\(0.058\)).
+BNCI2014\_001 reaches \(0.650\) all-trial accuracy and \(0.692\) selective
+accuracy with ECE \(0.102\). PhysionetMI is weaker, with \(0.560\) all-trial
+accuracy, \(0.600\) selective accuracy, and ECE \(0.203\). The external
+datasets therefore support the reliability framing but not a universal
+performance claim.
+
+Third, ablations test whether the reliability result depends on one arbitrary
+confidence mechanism. In the local IIIa/IV 2a LDA slice, maximum probability
+outperforms margin and entropy at matched 60\% coverage. In a focused
+two-subject, 10-epoch deep-ensemble calibration ablation, post-ensemble
+temperature scaling gives the strongest probability quality: ECE falls from
+\(0.137\) with no temperature scaling to \(0.072\), while matched-coverage
+selective accuracy remains approximately stable. This supports calibrating
+the ensemble output rather than relying only on per-model calibration.
+
+\subsection{Controller Replay}
+
+Saved probability streams are replayed through a simple FIRE/HOLD controller
+with confidence hysteresis and a three-of-five debounce rule. This does not
+claim real-time prosthetic control; it translates classifier outputs into
+device-facing safety metrics. The balanced controller
+\((t_{\mathrm{on}}=0.60, t_{\mathrm{off}}=0.55)\) exposes the tradeoff:
+Cho2017 averages \(0.391\) fire coverage, \(0.177\) wrong-fire rate, and
+\(0.214\) safe-fire rate, while BNCI2014\_001 averages \(0.136\) fire
+coverage, \(0.060\) wrong-fire rate, and \(0.076\) safe-fire rate. A stricter
+\((0.80,0.75)\) controller is safer but usually too conservative, often
+producing no fires. The conclusion is therefore measured: selective prediction
+improves the command stream, but controller thresholds still need user- or
+dataset-specific tuning before deployment claims.
+
 \section{Conclusion}
 
 M.I.N.D. v2 strengthens the original reliability-aware BCI framework with
@@ -287,6 +377,9 @@ assistive-control claim.
 The most defensible contribution is therefore not simply that a deep model is
 more accurate. It is that a modern EEG decoding system can be evaluated as a
 selective, probability-aware controller under realistic cross-session shift,
-with enough saved artifacts to audit the reliability claim.
+with enough saved artifacts to audit the reliability claim. The external and
+controller-replay results strengthen the evaluation story while also exposing
+the remaining limitation: reliable abstention is promising, but safe firing
+requires tighter threshold calibration and expert review.
 
 \end{document}

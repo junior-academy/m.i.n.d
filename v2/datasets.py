@@ -1,4 +1,4 @@
-"""Dataset loading utilities for BCI IV 2a and MOABB."""
+"""Dataset loading utilities for BCI IV 2a, BCI IIIa, and MOABB."""
 
 from __future__ import annotations
 
@@ -11,7 +11,14 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from .config import BASE_DIR, EPOCH_DIR, MOABB_DATA_DIR, RANDOM_SEED
+from .config import BASE_DIR, BCI_IIIA_DATA_DIR, EPOCH_DIR, MOABB_DATA_DIR, RANDOM_SEED
+
+BCI_IIIA_EVENT_ID = {
+    "left_hand": 769,
+    "right_hand": 770,
+    "feet": 771,
+    "tongue": 772,
+}
 
 
 @dataclass
@@ -52,6 +59,80 @@ def load_bci_iv_2a_subject(subject: int, epoch_dir: Path = EPOCH_DIR) -> Subject
 
 def iter_bci_iv_2a_subjects(subjects: Iterable[int]) -> list[SubjectDataset]:
     return [load_bci_iv_2a_subject(int(subject)) for subject in subjects]
+
+
+def load_bci_iiia_subject(
+    subject: str,
+    data_dir: Path = BCI_IIIA_DATA_DIR,
+    random_state: int = RANDOM_SEED,
+) -> SubjectDataset:
+    """Load one BCI Competition III Dataset IIIa subject from its GDF file.
+
+    IIIa is distributed as one labeled recording per subject. To keep it
+    external to BCI IV 2a without pretending it has a paired T/E session, this
+    loader uses a stratified trial split and labels the split explicitly.
+    """
+
+    _prepare_moabb_env()
+    try:
+        import mne
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError("MNE is required to load BCI IIIa GDF files.") from exc
+
+    path = data_dir / f"{subject}.gdf"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing BCI IIIa GDF file: {path}")
+
+    raw = mne.io.read_raw_gdf(path, preload=True, verbose=False)
+    raw.pick("eeg")
+    raw.filter(
+        8.0,
+        30.0,
+        method="iir",
+        iir_params={"order": 5, "ftype": "butter"},
+        verbose=False,
+    )
+    events, annotation_ids = mne.events_from_annotations(raw, verbose=False)
+    event_id = {name: annotation_ids[str(code)] for name, code in BCI_IIIA_EVENT_ID.items() if str(code) in annotation_ids}
+    if len(event_id) < 2:
+        raise ValueError(f"{subject}: expected at least two motor-imagery event classes, found {event_id}")
+    cue_events = events[np.isin(events[:, 2], list(event_id.values()))]
+    code_by_name = BCI_IIIA_EVENT_ID
+    name_by_event = {value: name for name, value in event_id.items()}
+    labels = np.asarray([code_by_name[name_by_event[int(event)]] for event in cue_events[:, 2]], dtype=int)
+    epochs = mne.Epochs(
+        raw,
+        cue_events,
+        event_id,
+        tmin=0.0,
+        tmax=4.5,
+        baseline=None,
+        preload=True,
+        event_repeated="drop",
+        verbose=False,
+    )
+    X = epochs.get_data(copy=True).astype(np.float32)
+    y = labels[epochs.selection]
+    idx = np.arange(y.size)
+    train_idx, test_idx = train_test_split(
+        idx,
+        test_size=0.35,
+        random_state=random_state,
+        stratify=y,
+    )
+    return SubjectDataset(
+        dataset="BCI_IIIa",
+        subject=subject,
+        X_train=X[train_idx],
+        y_train=y[train_idx],
+        X_test=X[test_idx],
+        y_test=y[test_idx],
+        split="stratified_trial_split",
+    )
+
+
+def iter_bci_iiia_subjects(subjects: Iterable[str], random_state: int = RANDOM_SEED) -> list[SubjectDataset]:
+    return [load_bci_iiia_subject(str(subject), random_state=random_state) for subject in subjects]
 
 
 def _prepare_moabb_env() -> None:
@@ -156,4 +237,3 @@ def iter_moabb_subjects(
                 )
             )
     return out
-

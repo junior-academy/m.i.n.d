@@ -169,15 +169,18 @@ def write_tables(
     curve_rows: list[dict],
     reliability_rows_: list[dict],
     coverage_rows: list[dict],
+    controller_rows: list[dict] | None = None,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     subject_df = pd.DataFrame(subject_rows)
     curve_df = pd.DataFrame(curve_rows)
     reliability_df = pd.DataFrame(reliability_rows_)
     coverage_df = pd.DataFrame(coverage_rows)
+    controller_df = pd.DataFrame(controller_rows or [])
     subject_df.to_csv(out_dir / "subject_metrics.csv", index=False)
     aggregate_metrics(subject_df).to_csv(out_dir / "aggregate_metrics.csv", index=False)
     ablation_summary(subject_df).to_csv(out_dir / "ablation_summary.csv", index=False)
     curve_df.to_csv(out_dir / "risk_coverage.csv", index=False)
     reliability_df.to_csv(out_dir / "reliability_diagram_bins.csv", index=False)
     coverage_df.to_csv(out_dir / "coverage_sweep.csv", index=False)
+    controller_df.to_csv(out_dir / "controller_replay.csv", index=False)

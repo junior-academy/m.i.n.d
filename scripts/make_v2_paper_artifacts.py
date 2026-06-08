@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -19,7 +20,12 @@ def _collect(pattern_root: Path, filename: str) -> pd.DataFrame:
         rel_parent = path.parent.relative_to(pattern_root)
         if "paper_artifacts" in rel_parent.parts:
             continue
-        df = pd.read_csv(path)
+        try:
+            df = pd.read_csv(path)
+        except EmptyDataError:
+            continue
+        if df.empty and len(df.columns) == 0:
+            continue
         if "run" in df.columns:
             df = df.drop(columns=["run"])
         df.insert(0, "run", rel_parent.as_posix())

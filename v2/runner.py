@@ -12,8 +12,10 @@ from sklearn.preprocessing import LabelEncoder
 
 from adaptation import adapt_train_test
 
-from .config import ALIGNMENT_EPS, DEFAULT_COVERAGE, DEEP_EPOCHS, OUTPUT_DIR, RANDOM_SEED, SUBJECT_IDS
-from .datasets import SubjectDataset, iter_bci_iv_2a_subjects, iter_moabb_subjects
+from gating import DebounceConfig, debounced_gate, toggle_rate, wrong_fire_rate_all
+
+from .config import ALIGNMENT_EPS, BCI_IIIA_SUBJECT_IDS, DEFAULT_COVERAGE, DEEP_EPOCHS, OUTPUT_DIR, RANDOM_SEED, SUBJECT_IDS
+from .datasets import SubjectDataset, iter_bci_iiia_subjects, iter_bci_iv_2a_subjects, iter_moabb_subjects
 from .evaluation import coverage_sweep_rows, reliability_bin_rows, risk_coverage_rows, subject_metric_row, write_tables
 from .models import (
     ModelOutput,
@@ -148,8 +150,10 @@ def run_experiment(
     include_moabb: bool,
     moabb_datasets: list[str],
     moabb_subject_limit: int | None,
+    include_bci_iiia: bool,
     out_dir: Path,
     subjects: tuple[int, ...] = SUBJECT_IDS,
+    bci_iiia_subjects: tuple[str, ...] = BCI_IIIA_SUBJECT_IDS,
     epochs: int = DEEP_EPOCHS,
     seed: int = RANDOM_SEED,
 ) -> Path:
@@ -158,6 +162,8 @@ def run_experiment(
     _prepare_runtime_env(out_dir)
     np.random.seed(seed)
     datasets = iter_bci_iv_2a_subjects(subjects)
+    if include_bci_iiia:
+        datasets.extend(iter_bci_iiia_subjects(bci_iiia_subjects, random_state=seed))
     if include_moabb:
         datasets.extend(iter_moabb_subjects(moabb_datasets, moabb_subject_limit, random_state=seed))
 
@@ -165,6 +171,7 @@ def run_experiment(
     curve_rows: list[dict] = []
     rel_rows: list[dict] = []
     coverage_rows: list[dict] = []
+    controller_rows: list[dict] = []
 
     for raw_data in datasets:
         print(f"[v2] dataset={raw_data.dataset} subject={raw_data.subject} split={raw_data.split}", flush=True)
@@ -215,8 +222,32 @@ def run_experiment(
                 )
             )
             rel_rows.extend(reliability_bin_rows(data.dataset, data.subject, out.name, out.y_true, out.proba))
+            for cfg_name, cfg in (
+                ("balanced_0.60_0.55_3of5", DebounceConfig(t_on=0.60, t_off=0.55, k=3, n=5)),
+                ("strict_0.80_0.75_3of5", DebounceConfig(t_on=0.80, t_off=0.75, k=3, n=5)),
+            ):
+                fired, latched = debounced_gate(p_ens=out.proba, cfg=cfg)
+                wrong_fire = wrong_fire_rate_all(out.y_true, latched, fired)
+                coverage = float(fired.mean())
+                controller_rows.append(
+                    {
+                        "dataset": data.dataset,
+                        "subject": data.subject,
+                        "split": data.split,
+                        "model": out.name,
+                        "controller": cfg_name,
+                        "t_on": cfg.t_on,
+                        "t_off": cfg.t_off,
+                        "k": cfg.k,
+                        "n": cfg.n,
+                        "coverage": coverage,
+                        "wrong_fire_rate_all": wrong_fire,
+                        "safe_fire": coverage - wrong_fire,
+                        "toggle_rate": toggle_rate(fired),
+                    }
+                )
 
-    write_tables(out_dir, subject_rows, curve_rows, rel_rows, coverage_rows)
+    write_tables(out_dir, subject_rows, curve_rows, rel_rows, coverage_rows, controller_rows)
     (out_dir / "config.json").write_text(
         json.dumps(
             {
@@ -231,6 +262,8 @@ def run_experiment(
                 "include_moabb": include_moabb,
                 "moabb_datasets": moabb_datasets,
                 "moabb_subject_limit": moabb_subject_limit,
+                "include_bci_iiia": include_bci_iiia,
+                "bci_iiia_subjects": list(bci_iiia_subjects),
                 "epochs": epochs,
                 "seed": seed,
             },
@@ -257,6 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--include-moabb", action="store_true")
     parser.add_argument("--moabb-datasets", nargs="+", default=["Cho2017", "PhysionetMI"])
     parser.add_argument("--moabb-subject-limit", type=int, default=None)
+    parser.add_argument("--include-bci-iiia", action="store_true")
+    parser.add_argument("--bci-iiia-subjects", nargs="+", default=list(BCI_IIIA_SUBJECT_IDS))
     parser.add_argument("--subject-limit", type=int, default=None, help="Limit BCI IV 2a subjects for smoke tests.")
     parser.add_argument("--out-dir", type=Path, default=OUTPUT_DIR / "custom")
     parser.add_argument("--epochs", type=int, default=DEEP_EPOCHS)
@@ -279,8 +314,10 @@ def main() -> None:
         include_moabb=args.include_moabb,
         moabb_datasets=args.moabb_datasets,
         moabb_subject_limit=args.moabb_subject_limit,
+        include_bci_iiia=args.include_bci_iiia,
         out_dir=args.out_dir,
         subjects=subjects,
+        bci_iiia_subjects=tuple(args.bci_iiia_subjects),
         epochs=args.epochs,
         seed=args.seed,
     )
