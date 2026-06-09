@@ -31,10 +31,10 @@ models improve all-trial accuracy from \(0.435\) for v1 LDA to approximately
 ECE from \(0.069\) to \(0.057\), while the validation-weighted deep ensemble
 achieves mean ECE \(0.058\) and Brier score \(0.403\). The contribution is a
 reproducible reliability-aware evaluation framework for modern motor-imagery
-decoding, not an isolated claim of state-of-the-art accuracy.
+decoding, not an isolated benchmark-accuracy claim.
 \end{abstract}
 
-\section{Purpose and Exigence}
+\section{Purpose}
 
 Motor-imagery BCIs are intended for settings where an incorrect command can be
 more harmful than no command. A wheelchair, cursor, or prosthetic controller
@@ -44,12 +44,12 @@ ordinary classification accuracy, but it also asks whether confidence estimates
 are calibrated and whether accuracy improves when low-confidence trials are
 withheld.
 
-The exigence for v2 is twofold. First, the original M.I.N.D. pipeline showed
-that a calibrated classical decoder with selective prediction is a defensible
-assistive-control framing. Second, modern EEG papers expect comparison against
-deep architectures. M.I.N.D. v2 therefore adds EEGNet and a spatial-attention
-backbone, but keeps the primary research question focused on reliability under
-realistic cross-session shift.
+The motivation for v2 is twofold. First, the original M.I.N.D. pipeline showed
+that a calibrated classical decoder with selective prediction is a testable
+assistive-control framing. Second, current EEG decoding studies commonly
+compare against compact deep architectures. M.I.N.D. v2 therefore adds EEGNet
+and a spatial-attention backbone, while keeping the primary research question
+focused on reliability under realistic cross-session shift.
 
 \section{Background Knowledge}
 
@@ -185,7 +185,7 @@ The current full v2 run used Euclidean alignment, 60 training epochs for the
 deep models, maximum-probability abstention, 60\% headline coverage, and
 post-ensemble calibration. The output directory is
 \texttt{outputs/v2/full\_deep\_bci\_iv\_2a\_validation\_postcal/}. Combined
-paper artifacts are generated under
+paper artifacts are written under
 \texttt{outputs/v2/paper\_artifacts/}.
 
 The validation protocol is designed around explicit threats to validity:
@@ -232,7 +232,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{outputs/v2/paper_artifacts/figures/figure_1_headline_performance_BCI_IV_2a.pdf}
+  \includegraphics[width=\linewidth]{public_artifacts/v2_paper_artifacts/figures/figure_1_headline_performance_BCI_IV_2a.pdf}
   \caption{\textbf{Headline cross-session performance and reliability.}
   Across nine BCI Competition IV 2a subjects, the v2 deep models improve
   all-trial accuracy and matched 60\%-coverage selective accuracy over the v1
@@ -245,7 +245,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.72\linewidth]{outputs/v2/paper_artifacts/figures/figure_2_risk_coverage_BCI_IV_2a.pdf}
+  \includegraphics[width=0.72\linewidth]{public_artifacts/v2_paper_artifacts/figures/figure_2_risk_coverage_BCI_IV_2a.pdf}
   \caption{\textbf{Risk-coverage behavior for selective prediction.}
   The curves show the error rate among trials retained at each target coverage.
   A useful assistive-control decoder should move down and to the right: lower
@@ -257,7 +257,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.72\linewidth]{outputs/v2/paper_artifacts/figures/figure_3_reliability_support_BCI_IV_2a.pdf}
+  \includegraphics[width=0.72\linewidth]{public_artifacts/v2_paper_artifacts/figures/figure_3_reliability_support_BCI_IV_2a.pdf}
   \caption{\textbf{Trial-weighted reliability with confidence-bin support.}
   Points compare predicted confidence with empirical accuracy, while marker
   size and the lower panel report how many trials fall in each bin. This is the
@@ -270,7 +270,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.86\linewidth]{outputs/v2/paper_artifacts/figures/figure_4_subject_deltas_BCI_IV_2a.pdf}
+  \includegraphics[width=0.86\linewidth]{public_artifacts/v2_paper_artifacts/figures/figure_4_subject_deltas_BCI_IV_2a.pdf}
   \caption{\textbf{Subject-paired gains relative to v1 LDA.}
   Each dot is one subject's improvement over the v1 LDA baseline, and the
   vertical line marks the mean paired delta for each v2 model. This figure
@@ -283,7 +283,7 @@ with the lowest Brier score.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.72\linewidth]{outputs/v2/paper_artifacts/figures/figure_5_coverage_sweep_BCI_IV_2a.pdf}
+  \includegraphics[width=0.72\linewidth]{public_artifacts/v2_paper_artifacts/figures/figure_5_coverage_sweep_BCI_IV_2a.pdf}
   \caption{\textbf{Selective accuracy at practical operating coverages.}
   The 40\%, 60\%, and 80\% operating points summarize how each decoder behaves
   as the system is allowed to abstain more or less often. This supports the
@@ -380,6 +380,6 @@ selective, probability-aware controller under realistic cross-session shift,
 with enough saved artifacts to audit the reliability claim. The external and
 controller-replay results strengthen the evaluation story while also exposing
 the remaining limitation: reliable abstention is promising, but safe firing
-requires tighter threshold calibration and expert review.
+requires tighter threshold calibration and external domain review.
 
 \end{document}

@@ -1,69 +1,113 @@
-# M.I.N.D v1
+# M.I.N.D. v2
 
-M.I.N.D. is a reproducible motor-imagery EEG study focused on reliability, not
-just raw classifier accuracy. The project answers one main question:
+M.I.N.D. v2 is a reliability-aware motor-imagery EEG decoding study. The
+branch evaluates BCI decoders not only by all-trial accuracy, but also by
+calibration, selective prediction, risk-coverage behavior, and controller-level
+FIRE/HOLD replay.
 
-> When a motor-imagery BCI is allowed to abstain on low-confidence trials, does a calibrated LDA+SVM ensemble stay more reliable than a single model when tested on a different recording session?
+The central question is:
 
-## Main Claim
+> When a motor-imagery BCI decoder is uncertain, can calibrated probabilities
+> and abstention produce a more reliable command stream than forced-choice
+> classification?
 
-The headline evaluation is subject-paired and session-held-out:
+## Branch Layout
 
-- Fit preprocessing outputs, FBCSP feature extractors, probability calibration, LDA, and SVM on `A0xT`.
-- Apply label-free Euclidean alignment to reduce session covariance shift. `A0xE` labels are not used for alignment.
-- Score exactly once on the paired `A0xE` session.
-- Compare the equal-weight LDA+SVM soft vote against pre-specified LDA.
-- Compare both decoders at matched coverage, not ensemble-confident trials against single-model all-trials.
-- Report per-subject deltas and a Wilcoxon signed-rank test. With `n = 9`, inference is explicitly limited.
+- `m.i.n.d-v2`: active paper branch with deep models, external validation,
+  calibration ablations, controller replay, and public paper artifacts.
+- `m.i.n.d-v1`: classical baseline branch centered on calibrated FBCSP + LDA/SVM.
+- `archive/main-confusion-matrices-t-test`: local archive branch for legacy
+  confusion-matrix and t-test work.
+- `archive/stats-tests`: local archive branch for older statistics scripts.
 
-## Methodology
+The remote default branch is `origin/m.i.n.d-v2`.
 
-The pipeline is intentionally leakage-aware:
+## Current Paper Claim
 
-1. **Data split:** Train on BCI IV 2a `A0xT`; evaluate once on paired `A0xE`.
-2. **Session adaptation:** Apply label-free Euclidean alignment separately to train and evaluation sessions. Evaluation labels are not used for alignment.
-3. **Feature extraction:** Use FBCSP over `8-12`, `12-16`, `16-20`, and `20-30 Hz`, plus optional bandpower.
-4. **Base decoders:** Train calibrated LDA and calibrated RBF-SVM.
-5. **Main ensemble:** Average LDA and SVM probabilities with equal weights.
-6. **Selective prediction:** Keep the highest-confidence trials at a fixed operating coverage and report risk/accuracy on those trials.
-7. **Reliability evaluation:** Report ECE, Brier score, reliability diagrams, and risk-coverage curves.
-8. **External validation:** Run the same decoder contract on MOABB datasets. EEGNet is optional and used only as a modern comparison baseline.
+The v2 paper uses BCI Competition IV Dataset 2a as the primary held-out-session
+benchmark. Each subject is trained on `A0xT` and evaluated once on paired
+`A0xE`. Evaluation labels are not used for alignment, feature extraction,
+model fitting, calibration, threshold choice, or ensemble weighting.
 
-The main comparison is always the calibrated LDA+SVM ensemble vs calibrated LDA.
-EEGNet is not part of the ensemble and should not be treated as the focus of the
-project.
+The active v2 comparison includes:
 
-## Reproducibility
+- calibrated v1 LDA baseline,
+- EEGNet,
+- lightweight spatial-attention EEG model,
+- validation-weighted deep ensemble,
+- optional post-ensemble temperature scaling,
+- max-probability, entropy, and margin uncertainty scores,
+- controller replay with confidence hysteresis and three-of-five debounce.
 
-### 1. Environment
+The paper should be read as a reliability evaluation study, not a deployment
+claim. The current evidence supports calibrated abstention and auditability;
+safe firing still requires tighter threshold calibration and external domain
+review.
 
-Use Python 3.11 if possible:
+## Key Results
 
-```bash
-conda activate eegbci
-python --version
+Primary BCI IV 2a deep run:
+
+- v1 LDA: all-trial accuracy `0.435`, 60%-coverage selective accuracy `0.524`.
+- Spatial-attention model: all-trial accuracy about `0.699`, selective accuracy about `0.780`.
+- Validation-weighted deep ensemble: selective accuracy about `0.783`, ECE about `0.058`, Brier about `0.403`.
+
+Additional validation and stress tests:
+
+- Local BCI Competition IIIa LDA: accuracy `0.659`, selective accuracy `0.769`, coverage `0.614`.
+- MOABB five-subject validation:
+  - Cho2017: accuracy `0.640`, selective accuracy `0.724`, ECE `0.058`.
+  - PhysionetMI: accuracy `0.560`, selective accuracy `0.600`, ECE `0.203`.
+  - BNCI2014_001: accuracy `0.650`, selective accuracy `0.692`, ECE `0.102`.
+- Focused calibration ablation:
+  - no temperature scaling: ECE `0.137`,
+  - per-model temperature scaling: ECE `0.126`,
+  - post-ensemble temperature scaling: ECE `0.072`.
+
+## Repository Structure
+
+```text
+v2/
+  config.py        # v2 defaults, paths, subjects, coverage points, seeds
+  datasets.py      # BCI IV 2a, local BCI IIIa, and MOABB loaders
+  models.py        # v1 LDA wrapper, EEGNet, spatial model, ensembles
+  calibration.py   # temperature scaling and softmax helpers
+  uncertainty.py   # max-probability, entropy, and margin scores
+  evaluation.py    # metrics, risk-coverage, reliability bins, controller tables
+  plotting.py      # paper-style figures with LaTeX-like figure typography
+  runner.py        # experiment orchestration and CLI
+
+scripts/
+  run_v2_headline.py          # primary BCI IV 2a headline runs
+  run_v2_moabb.py             # MOABB validation helper
+  make_v2_paper_artifacts.py  # combined paper tables and figures
+
+public_artifacts/
+  v2_paper_artifacts/         # 78-file public paper artifact package
+
+AUDIT_PACKAGE.md              # commands for reproducing the larger audit runs
+v2_experiment.py              # direct v2 CLI entry point
+writeup_v2.tex                # v2 paper manuscript
+writeup.tex                   # v1 baseline manuscript retained for reference
 ```
 
-Install the core dependencies:
+## Environment
+
+Use Python 3.11 if possible.
 
 ```bash
 python -m pip install -r requirements.txt
-```
-
-Optional EEGNet dependency:
-
-```bash
 python -m pip install -r requirements-eegnet.txt
 ```
 
-Sanity check:
+Sanity checks:
 
 ```bash
 python -c "import mne, moabb, sklearn; print('core ok')"
-python -c "import torch; print('eegnet ok')"
+python -c "import torch; print('torch ok')"
 ```
 
-### 2. Data
+## Data
 
 Place BCI Competition IV 2a GDF files here:
 
@@ -81,202 +125,27 @@ data/BCICIV_2a_gdf/A09T.gdf
 data/BCICIV_2a_gdf/A09E.gdf
 ```
 
-The `A0xE.gdf` files contain unknown cues (`783`) rather than class labels. The
-true labels are published separately on the BCI Competition IV results page, and
-`download_true_labels.py` normalizes them into
-`data/BCICIV_2a_gdf/true_labels/A01E.csv` through `A09E.csv`.
-
-### 3. Primary BCI IV 2a Run
-
-From this directory, run:
+The `A0xE.gdf` files use unknown cues, so evaluation labels must be supplied
+from the official BCI Competition IV label files:
 
 ```bash
 python download_true_labels.py
-./run_all.sh
 ```
 
-`run_all.sh` performs:
-
-1. preprocessing,
-2. held-out selective evaluation,
-3. Wilcoxon/per-subject statistics,
-4. printed headline reliability summary.
-
-Primary outputs are written to `outputs/heldout_session/`:
-
-- `subject_results.csv`: one row per subject at the pre-registered coverage.
-- `risk_coverage.csv`: threshold sweep for ensemble and LDA, used descriptively.
-- `reliability_metrics.csv`: accuracy, mean confidence, ECE, and Brier score.
-- `reliability_diagram_bins.csv`: top-label confidence-bin data for reliability diagrams.
-- `reliability_diagrams/*.png`: plotted reliability diagrams when matplotlib is installed.
-- `headline_stats.csv`: Wilcoxon summary.
-- `per_subject_deltas.csv`: paired deltas used by the test.
-
-### 4. No-Adaptation Ablation
-
-To run the older cold-transfer baseline for comparison:
-
-```bash
-python selective_eval.py --adaptation none
-python stats.py \
-  --subject-results outputs/heldout_session_no_adaptation/subject_results.csv \
-  --out outputs/heldout_session_no_adaptation/headline_stats.csv
-```
-
-### 5. EEGNet Comparison
-
-To add EEGNet as a modern deep-learning comparison:
-
-```bash
-python -m pip install -r requirements-eegnet.txt
-python selective_eval.py --include-eegnet --eegnet-epochs 60
-```
-
-This adds `EEGNet` rows/columns to the same reliability artifacts. It does not
-change the main ensemble.
-
-## MOABB External Validation
-
-Run a small two-dataset external check:
-
-```bash
-python moabb_eval.py \
-  --datasets Cho2017 PhysionetMI \
-  --subjects-per-dataset 1 \
-  --out-dir outputs/moabb_external
-```
-
-Run a broader validation once the first-download cache is populated:
-
-```bash
-python moabb_eval.py \
-  --datasets Cho2017 PhysionetMI \
-  --subjects-per-dataset 5 \
-  --out-dir outputs/moabb_external_5subj
-```
-
-To include EEGNet in MOABB outputs:
-
-```bash
-python moabb_eval.py \
-  --datasets Cho2017 PhysionetMI \
-  --subjects-per-dataset 5 \
-  --include-eegnet \
-  --eegnet-epochs 60 \
-  --out-dir outputs/moabb_external_5subj_eegnet
-```
-
-MOABB outputs mirror the held-out run:
-
-- `summary_by_dataset.csv`: per-dataset mean deltas at matched coverage.
-- `subject_results.csv`: subject-level matched-coverage accuracy, ECE, and Brier deltas.
-- `risk_coverage.csv`: threshold sweep for selective prediction.
-- `reliability_metrics.csv`: all-trial accuracy, confidence, ECE, and Brier.
-- `reliability_diagram_bins.csv` and `reliability_diagrams/*.png`: reliability diagrams.
-
-The current smoke subset in `outputs/moabb_external/` uses one subject each
-from `Cho2017` and `PhysionetMI`. In that subset, matched-coverage accuracy and
-Brier score improve for the ensemble on both datasets, while ECE is worse. That
-is reported as a calibration limitation, not hidden: the average of calibrated
-base decoders can still need ensemble-level recalibration.
-
-## Paper Writeup
-
-The paper-style writeup is `writeup.tex`. It includes:
-
-- abstract,
-- purpose and exigence,
-- background knowledge,
-- architecture and novel application,
-- evaluation,
-- conclusion.
-
-Compile it with:
-
-```bash
-pdflatex writeup.tex
-pdflatex writeup.tex
-```
-
-## What Was Removed
-
-The old within-session CV path, Random Forest main-model runs, stacking meta-learner, baseline-weighted ensembles, Pygame demo, dashboard assets, threshold-by-threshold significance sweep, committed NumPy arrays, large generated PNGs, caches, and dated backups were removed from the research path.
-
-Those pieces either did not feed the held-out-session claim or introduced avoidable methodological risk:
-
-- RF remains outside the main claim as an optional future ablation.
-- Stacking was cut because it overfits at this sample size.
-- Baseline-weighted ensembles were cut because CV-accuracy-derived weights leak model selection information into the evaluation.
-- Threshold significance sweeps were replaced by one operating coverage plus a descriptive risk-coverage curve.
-- The local CSP fallback was removed; reported runs require pinned MNE.
-
-## Files
-
-| File | Role |
-|---|---|
-| `config.py` | Paths, bands, seed, subject/session lists, operating point |
-| `preprocess.py` | GDF to epochs for both train and evaluation sessions |
-| `adaptation.py` | Label-free Euclidean alignment for T/E session shift |
-| `fbcsp.py` | Filter-bank CSP feature extractor using MNE CSP |
-| `decode.py` | Calibrated LDA/SVM and equal soft vote |
-| `gating.py` | Confidence gate and debounced hysteresis helper |
-| `eegnet.py` | Optional PyTorch EEGNet comparison baseline |
-| `selective_eval.py` | Train-on-T, test-on-E risk-coverage evaluation |
-| `reliability.py` | ECE, Brier score, reliability diagrams, risk-coverage helpers |
-| `stats.py` | Wilcoxon and per-subject matched-coverage deltas |
-| `moabb_eval.py` | External replication entry point |
-| `run_all.sh` | One-command reproduction |
-| `writeup.tex` | Paper-style writeup with findings, architecture, evaluation, and conclusion |
-| `writeup_v2.tex` | v2 paper-style writeup covering deep reliability architecture and results |
-
-## Provenance
-
-Raw data are not committed. Generated arrays, plots, and reports are reproducible from scripts and ignored by git.
-
-## v2 Deep Reliability Pipeline
-
-v2 keeps the v1 leakage-aware philosophy but adds modern deep backbones. The
-protocol remains strict: `A0xT` trains the model and supplies the internal
-validation split for calibration, threshold selection, and ensemble weighting;
-`A0xE` labels are used only for final evaluation metrics.
-
-Repository structure:
+Local BCI Competition IIIa files are expected under:
 
 ```text
-v2/
-  config.py        # defaults, paths, coverage points, seeds
-  datasets.py      # BCI IV 2a and MOABB subject loaders
-  models.py        # v1 LDA wrapper, EEGNet, spatial-attention EEG, ensembles
-  calibration.py   # temperature scaling and softmax helpers
-  uncertainty.py   # max-prob, entropy, and margin scores
-  evaluation.py    # metrics, risk-coverage, reliability bins, tables
-  plotting.py      # publication-style risk, reliability, delta, and summary figures
-  runner.py        # experiment orchestration and CLI
-scripts/
-  run_v2_headline.py          # BCI IV 2a headline table runs
-  run_v2_moabb.py             # configurable MOABB external validation
-  make_v2_paper_artifacts.py  # combined paper tables and figures
-v2_experiment.py              # direct CLI entry point
+data/BCICIV_3a_gdf/
 ```
 
-Architecture choices:
+MOABB datasets are downloaded through MOABB and cached outside the repository.
+Raw EEG files and caches are not committed.
 
-- **v1 LDA** remains the calibrated FBCSP + LDA baseline.
-- **EEGNet** is the full deep backbone.
-- **Spatial-attention EEG** is the second modern backbone. It learns channel
-  importance weights before temporal convolution, giving a lightweight channel
-  relationship model without the fragility of hand-designed graph adjacency.
-- **Temperature scaling** is fit only on a validation split from the training
-  session.
-- **Deep ensembles** can use equal weights or validation-accuracy weights from
-  the training-session validation split.
-- **Post-ensemble calibration** can temperature-scale the soft-voted ensemble
-  using validation predictions only.
+## Running v2 Experiments
 
-Run the direct CLI:
+Direct CLI example:
 
 ```bash
-conda activate eegbci
 python v2_experiment.py \
   --model all \
   --use-ea \
@@ -290,7 +159,7 @@ python v2_experiment.py \
   --out-dir outputs/v2/full_deep_bci_iv_2a_validation_postcal
 ```
 
-Important CLI flags:
+Useful flags:
 
 - `--model`: `lda`, `eegnet`, `spatial`, or `all`
 - `--use-ea`: enable label-free Euclidean alignment
@@ -300,27 +169,27 @@ Important CLI flags:
 - `--post-ensemble-calibration`: recalibrate soft-voted ensemble probabilities
 - `--uncertainty-score`: `max-prob`, `entropy`, or `margin`
 - `--coverage-target`: matched-coverage operating point
-- `--include-moabb`: include MOABB external datasets
-- `--moabb-datasets`: MOABB dataset names, such as `Cho2017 PhysionetMI`
+- `--include-bci-iiia`: include local BCI Competition IIIa subjects
+- `--include-moabb`: include MOABB datasets
+- `--moabb-datasets`: dataset names such as `Cho2017 PhysionetMI BNCI2014_001`
 - `--moabb-subject-limit`: subjects per MOABB dataset
 
-Reproduce the v2 BCI IV 2a headline comparison runs:
+Run the primary BCI IV 2a headline script:
 
 ```bash
 python scripts/run_v2_headline.py
 ```
 
-Run external MOABB validation:
+Run MOABB validation:
 
 ```bash
 python scripts/run_v2_moabb.py \
-  --datasets Cho2017 PhysionetMI \
+  --datasets Cho2017 PhysionetMI BNCI2014_001 \
   --subject-limit 5 \
-  --epochs 60 \
-  --out-dir outputs/v2/moabb_external
+  --out-dir outputs/v2/moabb_5subj_3datasets_lda
 ```
 
-Generate paper-ready combined figures and tables from saved v2 outputs:
+Rebuild combined paper artifacts from saved runs:
 
 ```bash
 python scripts/make_v2_paper_artifacts.py \
@@ -328,33 +197,55 @@ python scripts/make_v2_paper_artifacts.py \
   --out-dir outputs/v2/paper_artifacts
 ```
 
-v2 writes:
+## Outputs
 
+Each v2 run writes:
+
+- `config.json`
 - `subject_metrics.csv`
 - `aggregate_metrics.csv`
 - `risk_coverage.csv`
 - `reliability_diagram_bins.csv`
 - `coverage_sweep.csv`
 - `ablation_summary.csv`
-- `figures/*.png` and `figures/*.pdf`
+- `controller_replay.csv`
+- `figures/*.png`
+- `figures/*.pdf`
 
-Key paper artifacts:
+The public paper artifact package is:
 
-- `outputs/v2/paper_artifacts/headline_summary_table.csv`
-- `outputs/v2/paper_artifacts/coverage_sweep_summary_table.csv`
-- `outputs/v2/paper_artifacts/figures/figure_1_headline_performance_BCI_IV_2a.pdf`
-- `outputs/v2/paper_artifacts/figures/figure_2_risk_coverage_BCI_IV_2a.pdf`
-- `outputs/v2/paper_artifacts/figures/figure_3_reliability_support_BCI_IV_2a.pdf`
-- `outputs/v2/paper_artifacts/figures/figure_4_subject_deltas_BCI_IV_2a.pdf`
-- `outputs/v2/paper_artifacts/figures/figure_5_coverage_sweep_BCI_IV_2a.pdf`
+```text
+public_artifacts/v2_paper_artifacts/
+```
 
-The corrected reliability figure is trial-weighted and includes confidence-bin
-support, so sparse high-confidence bins from v1 LDA cannot visually dominate
-the story.
+It contains 78 files: combined tables plus paper-ready PNG/PDF figures. The
+larger run-level audit directories remain under ignored `outputs/v2/`. See
+`AUDIT_PACKAGE.md` for the exact reproduction commands.
 
-Compile the v2 writeup:
+## Paper
+
+Compile the v2 manuscript:
 
 ```bash
 pdflatex writeup_v2.tex
 pdflatex writeup_v2.tex
 ```
+
+The manuscript references figures from:
+
+```text
+public_artifacts/v2_paper_artifacts/figures/
+```
+
+The v1 manuscript remains in `writeup.tex` as a baseline reference.
+
+## Notes on Scope
+
+The active paper path excludes older within-session CV runs, large committed
+arrays, dashboard artifacts, Pygame demos, stacking experiments, and historical
+plot outputs. Those items either do not support the held-out-session
+reliability claim or are preserved only on archive branches.
+
+Confusion matrices from the archive branch should not be copied into v2 as
+static images. If confusion matrices are needed for the paper, regenerate them
+from current v2 predictions so they match the reported runs.

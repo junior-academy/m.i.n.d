@@ -19,8 +19,6 @@ stability_*.png
 data/mne_data/
 
 *.tex
-!writeup.tex
-!writeup_v2.tex
 *.aux
 *.fdb_latexmk
 *.fls
@@ -29,3 +27,5 @@ data/mne_data/
 *.pdf
 !public_artifacts/**/*.pdf
 *.synctex.gz
+writeup_v2.tex
+writeup.tex

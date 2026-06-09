@@ -31,11 +31,11 @@ persist beyond BCI IV 2a, although ECE worsens in that tiny subset. This
 writeup is retained as the classical baseline record for the final paper;
 modern deep models, IIIa validation, broader MOABB validation, calibration
 ablations, and controller replay belong to the v2 paper branch. The central
-contribution is not a claim of state-of-the-art accuracy; it is a reproducible
+contribution is not a benchmark-accuracy claim; it is a reproducible
 framework for evaluating whether a BCI decoder is reliable enough to act.
 \end{abstract}
 
-\section{Purpose and Exigence}
+\section{Purpose}
 
 Motor-imagery BCIs decode imagined movement from EEG. The long-term assistive
 goal is compelling: a person with impaired movement could use neural activity
@@ -44,7 +44,7 @@ EEG is low-amplitude, noisy, and non-stationary. A model that looks acceptable
 under average classification accuracy can still be unusable if it fires
 incorrect commands at the wrong time.
 
-M.I.N.D. is built around a human-centered control principle:
+M.I.N.D. is built around a control-safety principle:
 \[
   \text{a wrong action is worse than no action.}
 \]
@@ -176,8 +176,8 @@ matched coverage or lowers risk without hiding unusably low coverage.
 \subsection{EEGNet Comparison}
 
 EEGNet is included as a modern deep-learning comparison only. The project does
-not use EEGNet inside the ensemble and does not tune the architecture to chase
-state-of-the-art performance. The optional implementation follows the standard
+not use EEGNet inside the ensemble and does not tune the architecture for
+benchmark optimization. The optional implementation follows the standard
 EEGNet pattern: temporal convolution, depthwise spatial convolution,
 separable temporal convolution, dropout, and a softmax classifier. It emits
 probabilities into the same evaluation tables as LDA and the ensemble:
